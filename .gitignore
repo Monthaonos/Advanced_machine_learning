@@ -1,0 +1,19 @@
+# Dossier des modèles (lourds)
+data
+checkpoints
+
+# Fichiers générés par Python
+__pycache__/
+*.pyc
+
+# Environnement virtuel
+venv/
+.venv/
+env/
+
+# Fichiers de données générés
+*.npy
+*.npz
+
+# Fichiers systèmes Mac
+.DS_Store
