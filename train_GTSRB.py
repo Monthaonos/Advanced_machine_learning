@@ -1,11 +1,17 @@
 """
 Main training and evaluation script for GTSRB models.
 
-This script trains two ResNet-based models on the German Traffic Sign Recognition Benchmark:
-1. Standard Model: Trained with standard empirical risk minimisation.
-2. Robust Model: Trained with PGD adversarial training.
+This script trains two ResNet-based models on the German Traffic Sign Recognition Benchmark.
 
-It automatically handles the download of the dataset via torchvision if needed.
+It handles automatic model loading from local disk (or Google Drive) AND
+automatic downloading/uploading from S3 (MinIO) if configured.
+
+Usage examples:
+    # Onyxia (S3 auto-fetch):
+    python train_gtsrb.py --s3-bucket "maeltremouille/robustness_training"
+
+    # Colab (Google Drive):
+    python train_gtsrb.py --save-dir "/content/drive/MyDrive/Checkpoints/GTSRB"
 """
 
 import os
@@ -13,6 +19,7 @@ import argparse
 import torch
 from torch import nn
 from torch import optim
+import s3fs  # Nécessaire pour la gestion S3
 
 # --- IMPORTS SPÉCIFIQUES GTSRB ---
 from services.GTSRB.dataloader import get_gtsrb_loaders
@@ -26,13 +33,13 @@ from services.utils import save_model, load_model
 def parse_args() -> argparse.Namespace:
     """Define and parse command‑line arguments for the script."""
     parser = argparse.ArgumentParser(
-        description="Train GTSRB models with and without PGD adversarial training, then evaluate.",
+        description="Train GTSRB models with S3/Drive support.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,  # GTSRB images are larger/ResNet is heavier, so smaller batch size might be needed
+        default=64,
         help="Mini‑batch size for training and evaluation.",
     )
     parser.add_argument(
@@ -44,14 +51,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=1e-4,  # Lower learning rate for ResNet fine-tuning often works better
+        default=1e-4,
         help="Learning rate for the Adam optimizer.",
     )
     # PGD Parameters
     parser.add_argument(
         "--epsilon",
         type=float,
-        default=8 / 255,  # Standard perturbation budget
+        default=8 / 255,
         help="Maximum L∞ perturbation for the PGD attack.",
     )
     parser.add_argument(
@@ -63,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-steps",
         type=int,
-        default=10,  # 10 steps is a good trade-off for training
+        default=10,
         help="Number of gradient steps for the PGD attack during training.",
     )
     parser.add_argument(
@@ -72,19 +79,28 @@ def parse_args() -> argparse.Namespace:
         default=True,
         help="Use a random start within the ε‑ball.",
     )
-    # System & Save
     parser.add_argument(
         "--device",
         type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
         help="Compute device to use.",
     )
+
+    # --- ARGUMENTS DE STOCKAGE (Unified Storage) ---
     parser.add_argument(
         "--save-dir",
         type=str,
-        default="checkpoints/gtsrb",  # Separate folder for GTSRB checkpoints
-        help="Directory in which to save and load model checkpoints.",
+        default="checkpoints/gtsrb",
+        help="Directory (Local or Drive) to save/load checkpoints.",
     )
+    parser.add_argument(
+        "--s3-bucket",
+        type=str,
+        default=None,
+        help="Optional: S3 Bucket root (e.g., 'user/project') for cloud storage.",
+    )
+    # -----------------------------------------------
+
     parser.add_argument(
         "--force-retrain",
         action="store_true",
@@ -94,8 +110,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_models(device: torch.device) -> tuple[nn.Module, nn.Module]:
-    """Instantiate two identical GTSRB models (ResNet-based) on the specified device."""
-    # Note: GTSRBModel includes the internal normalization layer
+    """Instantiate two identical GTSRB models (ResNet-based)."""
     model_clean = GTSRBModel().to(device)
     model_robust = GTSRBModel().to(device)
     return model_clean, model_robust
@@ -112,12 +127,55 @@ def get_optimizers(
     return opt_clean, opt_robust
 
 
+def manage_checkpoint(model, local_path, s3_bucket=None, device="cpu"):
+    """
+    Logique unifiée de chargement : Local -> S3 -> False (Train).
+    """
+    # 1. Vérification LOCALE
+    if os.path.exists(local_path):
+        print(f"✅ Modèle trouvé localement : {local_path}")
+        try:
+            load_model(model, local_path, device=device)
+            return True
+        except Exception as e:
+            print(f"⚠️ Erreur chargement local : {e}")
+
+    # 2. Vérification S3 (Si configuré)
+    if s3_bucket:
+        filename = os.path.basename(local_path)
+        # On suppose que le fichier est dans 'checkpoints/gtsrb' ou juste 'checkpoints' selon ta préférence S3.
+        # Ici j'aligne sur la structure : bucket/checkpoints/gtsrb_clean.pth pour éviter les conflits
+        s3_path = f"{s3_bucket}/checkpoints/{filename}"
+
+        print(f"☁️  Recherche sur S3 ({s3_path})...")
+        try:
+            fs = s3fs.S3FileSystem(
+                client_kwargs={"endpoint_url": "https://minio.lab.sspcloud.fr"}
+            )
+
+            if fs.exists(s3_path):
+                print(f"⬇️  Modèle trouvé sur S3. Téléchargement vers {local_path}...")
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                fs.get(s3_path, local_path)
+
+                load_model(model, local_path, device=device)
+                print("✅ Modèle téléchargé et chargé avec succès.")
+                return True
+            else:
+                print("❌ Modèle absent du S3.")
+        except Exception as e:
+            print(f"⚠️ Erreur S3 : {e}")
+
+    # 3. Rien trouvé
+    return False
+
+
 def main() -> None:
     args = parse_args()
     device = torch.device(args.device)
     print(f"🚀 Running GTSRB training on {device}")
 
-    # 1. Prepare data loaders (GTSRB)
+    # 1. Prepare data loaders (GTSRB handles download automatically)
     print("⏳ Loading GTSRB Dataset...")
     train_loader, test_loader = get_gtsrb_loaders(batch_size=args.batch_size)
 
@@ -136,38 +194,44 @@ def main() -> None:
     # ---------------------------------------------------------
     # A. Modèle CLEAN (Standard)
     # ---------------------------------------------------------
-    if os.path.exists(clean_ckpt) and not args.force_retrain:
-        print(f"✅ Modèle clean trouvé ({clean_ckpt}). Chargement...")
-        load_model(model_clean, clean_ckpt, device=device)
-    else:
-        print("⚡️ Modèle clean introuvable. Entraînement Standard...")
+    loaded_clean = manage_checkpoint(model_clean, clean_ckpt, args.s3_bucket, device)
+
+    if not loaded_clean or args.force_retrain:
+        print("⚡️ Démarrage entraînement Standard...")
         train_models(
             train_dataloader=train_loader,
             model=model_clean,
             loss_fn=loss_fn,
             optimizer=optimizer_clean,
-            epsilon=args.epsilon,  # Used only if pgd_robust=True
+            epsilon=args.epsilon,
             alpha=args.alpha,
             num_steps=args.num_steps,
             random_start=args.random_start,
             clamp_min=0.0,
             clamp_max=1.0,
             epochs=args.epochs,
-            pgd_robust=False,  # <--- Standard Training
+            pgd_robust=False,
             device=device,
         )
         save_model(model_clean, clean_ckpt)
-        print(f"💾 Modèle clean sauvegardé sous {clean_ckpt}.")
+        print(f"💾 Modèle clean sauvegardé : {clean_ckpt}")
+
+        # Auto-upload S3
+        if args.s3_bucket:
+            s3_path = f"{args.s3_bucket}/checkpoints/gtsrb_clean.pth"
+            print(f"⬆️  Upload vers S3 : {s3_path}")
+            fs = s3fs.S3FileSystem(
+                client_kwargs={"endpoint_url": "https://minio.lab.sspcloud.fr"}
+            )
+            fs.put(clean_ckpt, s3_path)
 
     # ---------------------------------------------------------
     # B. Modèle ROBUSTE (Adversarial Training)
     # ---------------------------------------------------------
-    if os.path.exists(robust_ckpt) and not args.force_retrain:
-        print(f"✅ Modèle robuste trouvé ({robust_ckpt}). Chargement...")
-        load_model(model_robust, robust_ckpt, device=device)
-    else:
-        print("⚡️ Modèle robuste introuvable. Entraînement Adversarial (PGD)...")
-        print(f"   (PGD settings: eps={args.epsilon:.4f}, steps={args.num_steps})")
+    loaded_robust = manage_checkpoint(model_robust, robust_ckpt, args.s3_bucket, device)
+
+    if not loaded_robust or args.force_retrain:
+        print("⚡️ Démarrage entraînement Adversarial (PGD)...")
         train_models(
             train_dataloader=train_loader,
             model=model_robust,
@@ -180,11 +244,20 @@ def main() -> None:
             clamp_min=0.0,
             clamp_max=1.0,
             epochs=args.epochs,
-            pgd_robust=True,  # <--- Adversarial Training
+            pgd_robust=True,
             device=device,
         )
         save_model(model_robust, robust_ckpt)
-        print(f"💾 Modèle robuste sauvegardé sous {robust_ckpt}.")
+        print(f"💾 Modèle robuste sauvegardé : {robust_ckpt}")
+
+        # Auto-upload S3
+        if args.s3_bucket:
+            s3_path = f"{args.s3_bucket}/checkpoints/gtsrb_robust.pth"
+            print(f"⬆️  Upload vers S3 : {s3_path}")
+            fs = s3fs.S3FileSystem(
+                client_kwargs={"endpoint_url": "https://minio.lab.sspcloud.fr"}
+            )
+            fs.put(robust_ckpt, s3_path)
 
     # ---------------------------------------------------------
     # C. ÉVALUATION COMPARATIVE
