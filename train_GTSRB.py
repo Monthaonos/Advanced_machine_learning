@@ -145,7 +145,7 @@ def manage_checkpoint(model, local_path, s3_bucket=None, device="cpu"):
         filename = os.path.basename(local_path)
         # On suppose que le fichier est dans 'checkpoints/gtsrb' ou juste 'checkpoints' selon ta préférence S3.
         # Ici j'aligne sur la structure : bucket/checkpoints/gtsrb_clean.pth pour éviter les conflits
-        s3_path = f"{s3_bucket}/checkpoints/{filename}"
+        s3_path = f"{s3_bucket}/checkpoints/cifar_10_large/{filename}"
 
         print(f"☁️  Recherche sur S3 ({s3_path})...")
         try:

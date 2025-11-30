@@ -153,7 +153,7 @@ def manage_checkpoint(model, local_path, s3_bucket=None, device="cpu"):
     # 2. Vérification S3 (Si configuré)
     if s3_bucket:
         filename = os.path.basename(local_path)
-        s3_path = f"{s3_bucket}/checkpoints/{filename}"
+        s3_path = f"{s3_bucket}/checkpoints/cifar_10/{filename}"
 
         print(f"☁️  Recherche sur S3 ({s3_path})...")
         try:
