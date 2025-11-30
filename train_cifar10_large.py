@@ -75,13 +75,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--device",
         type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
+        # MODIFICATION ICI : On vérifie MPS (Mac), puis CUDA (Nvidia), sinon CPU
+        default="mps"
+        if torch.backends.mps.is_available()
+        else ("cuda" if torch.cuda.is_available() else "cpu"),
         help="Compute device to use.",
     )
     parser.add_argument(
         "--save-dir",
         type=str,
-        default="checkpoints/cifar_10",
+        default="checkpoints/cifar_10_large",
         help="Directory in which to save and load model checkpoints.",
     )
     parser.add_argument(
@@ -140,7 +143,7 @@ def main() -> None:
 
     # --- MODIFICATION: Noms de fichiers distincts pour le modèle Large ---
     clean_ckpt = os.path.join(args.save_dir, "cifar10_large_clean.pth")
-    robust_ckpt = os.path.join(args.save_dir, "cifar10_large_robust.pth")
+    robust_ckpt = os.path.join(args.save_dir, "cifar_10_large_robust.pth")
     # ---------------------------------------------------------------------
 
     # ---------------------------------------------------------
