@@ -59,6 +59,12 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate for the Optimizer.",
     )
     parser.add_argument(
+        "--prob",
+        type=float,
+        default=1.0,
+        help="Probability of attacking the model.",
+    )
+    parser.add_argument(
         "--epsilon",
         type=float,
         default=8 / 255,
@@ -215,6 +221,7 @@ def main() -> None:
             loss_fn=loss_fn,
             optimizer=optimizer_clean,
             epsilon=args.epsilon,
+            prob=args.prob,
             alpha=args.alpha,
             num_steps=args.num_steps,
             random_start=args.random_start,

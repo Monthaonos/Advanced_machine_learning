@@ -65,6 +65,12 @@ def parse_args() -> argparse.Namespace:
         help="Maximum L∞ perturbation for the PGD attack.",
     )
     parser.add_argument(
+        "--prob",
+        type=float,
+        default=1.0,
+        help="Probability of attacking the model.",
+    )
+    parser.add_argument(
         "--alpha",
         type=float,
         default=2 / 255,
