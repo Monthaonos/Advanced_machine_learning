@@ -12,6 +12,7 @@ def train_models(
     epsilon: float,
     alpha: float,
     num_steps: int,
+    prob: float = 1.0,
     random_start: bool = True,
     clamp_min: float = 0.0,
     clamp_max: float = 1.0,
@@ -37,8 +38,9 @@ def train_models(
         for batch_idx, (x, y) in enumerate(epoch_bar, start=1):
             x = x.to(device)
             y = y.to(device)
+            should_attack = torch.bernoulli(torch.tensor(prob)).item()
 
-            if pgd_robust:
+            if pgd_robust and should_attack:
                 x_adv = pgd_attack(
                     model=model,
                     loss_fn=loss_fn,
