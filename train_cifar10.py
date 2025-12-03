@@ -26,8 +26,8 @@ from torch import optim
 import s3fs  # Nécessaire pour la gestion S3
 
 # --- Imports spécifiques au modèle Standard ---
-from services.cifar_10.dataloader import get_cifar10_loaders
-from services.cifar_10.model import SimpleCIFAR10CNN
+from services.dataloaders.cifar10_loader import get_cifar10_loaders
+from services.models.cifar10_model import SimpleCIFAR10CNN
 # ----------------------------------------------
 
 from services.train_test import train_models, test_models, test_models_adversarial

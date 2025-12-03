@@ -4,9 +4,9 @@ import csv
 import os
 from datetime import datetime
 
-# ... (Tes imports existants : dataloader, model, pgd_attack) ...
-from services.GTSRB.dataloader import get_gtsrb_loaders
-from services.GTSRB.model import GTSRBModel
+# Imports
+from services.dataloaders.gtsrb_loader import get_gtsrb_loaders
+from services.models.gtsrb_model import GTSRBModel
 from services.pgd_attack import pgd_attack
 
 # --- CONFIGURATION ---

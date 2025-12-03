@@ -22,8 +22,8 @@ from torch import optim
 import s3fs  # Nécessaire pour la gestion S3
 
 # --- IMPORTS SPÉCIFIQUES GTSRB ---
-from services.GTSRB.dataloader import get_gtsrb_loaders
-from services.GTSRB.model import GTSRBModel
+from services.dataloaders.gtsrb_loader import get_gtsrb_loaders
+from services.models.gtsrb_model import GTSRBModel
 # ---------------------------------
 
 from services.train_test import train_models, test_models, test_models_adversarial

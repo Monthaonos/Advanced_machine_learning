@@ -26,8 +26,8 @@ from torch import optim
 import s3fs  # Nécessaire pour la gestion S3
 
 # --- Imports spécifiques au modèle Large ---
-from services.cifar_10_large.dataloader import get_dataloaders
-from services.cifar_10_large.model import Network
+from services.dataloaders.cifar10_loader import get_cifar10_loaders
+from services.models.cifar10_large_model import Network
 # -------------------------------------------
 
 from services.train_test import train_models, test_models, test_models_adversarial
@@ -186,7 +186,7 @@ def main() -> None:
     device = torch.device(args.device)
 
     # Prepare data loaders
-    train_loader, test_loader = get_dataloaders(batch_size=args.batch_size)
+    train_loader, test_loader = get_cifar10_loaders(batch_size=args.batch_size)
 
     # Instantiate models and optimizers
     model_clean, model_robust = build_models(device)
