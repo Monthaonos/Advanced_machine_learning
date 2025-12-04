@@ -7,7 +7,7 @@ from datetime import datetime
 # Imports
 from services.dataloaders.gtsrb_loader import get_gtsrb_loaders
 from services.models.gtsrb_model import GTSRBModel
-from services.pgd_attack import pgd_attack
+from services.attacks import pgd_attack
 
 # --- CONFIGURATION ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
