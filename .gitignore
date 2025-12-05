@@ -1,6 +1,7 @@
 # Dossier des modèles (lourds)
 data/
 checkpoints/
+TEST_DAMIEN_CIFAR10/data/
 
 # Fichiers générés par Python
 __pycache__/
