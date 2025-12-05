@@ -45,7 +45,7 @@ def load_data_CIFAR10(batch_size = 64):
         trainset, 
         batch_size=batch_size, 
         shuffle=True,      
-        num_workers=3      
+        num_workers=2    
     )
 
     test_loader = DataLoader(

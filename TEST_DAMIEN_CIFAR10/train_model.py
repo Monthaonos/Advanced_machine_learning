@@ -8,10 +8,14 @@ def model_train(model: nn.Module, epochs: int, lr: float, train_loader, test_loa
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Entraînement sur : {device}")
     
+    model = model.to(device)
+
     # --- BOUCLE D'ENTRAINEMENT ---
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
     for epoch in range(epochs):
         model.train() # Mode entraînement (active BatchNorm et Dropout)
@@ -49,6 +53,10 @@ def model_train(model: nn.Module, epochs: int, lr: float, train_loader, test_loa
                 print(f"Epoch [{epoch+1}/{epochs}], Step [{i+1}], Loss: {running_loss/100:.4f}, Acc: {100.*correct/total:.2f}%")
                 running_loss = 0.0
 
+        scheduler.step() 
+
+        print(f"Epoch {epoch+1} terminée. Nouveau LR: {scheduler.get_last_lr()[0]}")
+
     # --- 7. EVALUATION FINALE ---
     print("Entraînement terminé. Évaluation sur le test set...")
     model.eval()
@@ -65,4 +73,6 @@ def model_train(model: nn.Module, epochs: int, lr: float, train_loader, test_loa
     print(f'Précision finale sur les 10000 images de test: {100 * correct / total:.2f} %')
 
     # Sauvegarder le modèle
-    torch.save(model.state_dict(), f"./trained_models/{model._get_name}_non_robust.pth")
+    torch.save(model.state_dict(), f"{model._get_name()}_non_robust5.pth")
+
+

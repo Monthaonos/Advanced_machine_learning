@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-
 class CIFAR10(nn.Module):
 
     def __init__(self, num_classes: int = 10):
@@ -29,24 +28,33 @@ class CIFAR10(nn.Module):
         self.conv3 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, padding=1)
         self.bn3 = nn.BatchNorm2d(128)
 
-        # --- Block 4: Bottleneck ---
-        # 128 -> 64 (Compression)
-        self.conv4 = nn.Conv2d(128, 64, kernel_size=1) 
-        self.bn4 = nn.BatchNorm2d(64) 
 
-        # 64 -> 64 (Traitement spatial)
-        self.conv5 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        # --- Block 4: even deeper features ---
+        # 128 → 256 feature maps
+
+        self.conv4 = nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+
+
+        # --- Block 5: Bottleneck ---
+        # 256 -> 64 (Compression)
+        self.conv5 = nn.Conv2d(256, 64, kernel_size=1) 
         self.bn5 = nn.BatchNorm2d(64) 
 
+        # 64 -> 64 (Traitement spatial)
+        self.conv6 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn6 = nn.BatchNorm2d(64) 
+
         # 64 -> 128 (Expansion)
-        self.conv6 = nn.Conv2d(64, 128, kernel_size=1)
-        self.bn6 = nn.BatchNorm2d(128)
+        self.conv7 = nn.Conv2d(64, 128, kernel_size=1)
+        self.bn7 = nn.BatchNorm2d(128)
 
 
         # --- Output layer ---
-        # After max pooling: spatial size becomes 16×16
+        # After max pooling: spatial size becomes ?×?
 
         self.fc = nn.Linear(128 * 8 * 8, num_classes)
+
 
 
     def forward(self, x):
@@ -63,7 +71,8 @@ class CIFAR10(nn.Module):
 
         x = F.relu(self.bn4(self.conv4(x)))
         x = F.relu(self.bn5(self.conv5(x)))
-        x = self.bn6(self.conv6(x))
+        x = F.relu(self.bn6(self.conv6(x)))
+        x = self.bn7(self.conv7(x))
 
         x += resnet
 
@@ -80,10 +89,3 @@ class CIFAR10(nn.Module):
         res = self.fc(x)
 
         return res
-
-
-
-
-
-
-
