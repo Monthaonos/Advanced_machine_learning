@@ -135,19 +135,6 @@ def main():
             "file": "cifar_10_random/cifar10_large_robust.pth",
             "name": "WideResNet (Robust)",
         },
-        # --- CIFAR-10 Random ---
-        {
-            "arch": "cifar10_random",
-            "data": "cifar10",
-            "file": "cifar_10_random/cifar10_large_clean.pth",
-            "name": "WideResNet (Standard)",
-        },
-        {
-            "arch": "cifar10_random",
-            "data": "cifar10",
-            "file": "cifar_10_random/cifar10_large_robust.pth",
-            "name": "WideResNet (Robust)",
-        },
     ]
 
     # Filtrage simple (plus de "all")
