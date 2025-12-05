@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 
 
-def plot_benchmark(csv_file, output_dir="results_large"):
+def plot_benchmark(csv_file, output_dir="results_large_random"):
     """
     Lit le CSV de résultats et génère deux graphiques :
     1. Accuracy par Attaque et par Modèle
@@ -80,4 +80,4 @@ def plot_benchmark(csv_file, output_dir="results_large"):
 if __name__ == "__main__":
     # Remplace par le chemin vers ton fichier CSV généré par evaluate.py
     # Si tu es sur Mac et que tu as utilisé le chemin local :
-    plot_benchmark("checkpoints/benchmark_results_large.csv")
+    plot_benchmark("checkpoints/cifar10_large_rd.csv")
