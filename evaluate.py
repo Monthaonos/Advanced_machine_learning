@@ -69,7 +69,7 @@ def main():
         "--target",
         type=str,
         required=True,
-        choices=["cifar10", "cifar10_large", "gtsrb"],
+        choices=["cifar10", "cifar10_large", "gtsrb", "cifar10_random"],
         help="Quelle architecture évaluer ?",
     )
 
@@ -100,7 +100,7 @@ def main():
         {
             "arch": "gtsrb",
             "data": "gtsrb",
-            "file": "gtsrb/gtsrb_clean.pth",  # ex: storage-path/gtsrb/gtsrb_clean.pth
+            "file": "gtsrb/gtsrb_clean.pth",
             "name": "GTSRB (Standard)",
         },
         {
@@ -113,7 +113,7 @@ def main():
         {
             "arch": "cifar10",
             "data": "cifar10",
-            "file": "cifar_10/cifar10_clean.pth",  # Attention à bien vérifier ce nom de dossier sur S3
+            "file": "cifar_10/cifar10_clean.pth",
             "name": "Cifar10 Small (Standard)",
         },
         {
@@ -130,21 +130,22 @@ def main():
             "name": "WideResNet (Standard)",
         },
         {
-            "arch": "cifar10_random",
+            "arch": "cifar10_large",
             "data": "cifar10",
             "file": "cifar_10_random/cifar10_large_robust.pth",
             "name": "WideResNet (Robust)",
         },
+        # --- CIFAR-10 Random ---
         {
             "arch": "cifar10_random",
             "data": "cifar10",
-            "file": "cifar_10_random/cifar10_random_clean.pth",
+            "file": "cifar_10_random/cifar10_large_clean.pth",
             "name": "WideResNet (Standard)",
         },
         {
             "arch": "cifar10_random",
             "data": "cifar10",
-            "file": "cifar_10_large/cifar10_random_robust.pth",
+            "file": "cifar_10_random/cifar10_large_robust.pth",
             "name": "WideResNet (Robust)",
         },
     ]
