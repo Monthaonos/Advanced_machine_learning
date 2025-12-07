@@ -27,7 +27,7 @@ def get_architecture(arch_name, device):
     """Factory pour instancier le squelette du modèle vide."""
     if arch_name == "cifar10":
         return SimpleCIFAR10CNN().to(device)
-    if arch_name == "cifar10_large" or arch_name == "cifar10_random":
+    if arch_name == "cifar10_large":
         return WideResNet().to(device)
     if arch_name == "gtsrb":
         return GTSRBModel().to(device)
@@ -69,7 +69,7 @@ def main():
         "--target",
         type=str,
         required=True,
-        choices=["cifar10", "cifar10_large", "gtsrb", "cifar10_random"],
+        choices=["cifar10", "cifar10_large", "gtsrb"],
         help="Quelle architecture évaluer ?",
     )
 
@@ -100,39 +100,39 @@ def main():
         {
             "arch": "gtsrb",
             "data": "gtsrb",
-            "file": "gtsrb/gtsrb_clean.pth",
+            "file": "gtsrb_clean.pth",
             "name": "GTSRB (Standard)",
         },
         {
             "arch": "gtsrb",
             "data": "gtsrb",
-            "file": "gtsrb/gtsrb_robust.pth",
+            "file": "gtsrb_robust.pth",
             "name": "GTSRB (Robust)",
         },
         # --- CIFAR-10 ---
         {
             "arch": "cifar10",
             "data": "cifar10",
-            "file": "cifar_10/cifar10_clean.pth",
+            "file": "cifar10_clean.pth",
             "name": "Cifar10 Small (Standard)",
         },
         {
             "arch": "cifar10",
             "data": "cifar10",
-            "file": "cifar_10/cifar10_robust.pth",
+            "file": "cifar10_robust.pth",
             "name": "Cifar10 Small (Robust)",
         },
         # --- CIFAR-10 Large ---
         {
             "arch": "cifar10_large",
             "data": "cifar10",
-            "file": "cifar_10_large/cifar10_large_clean.pth",
+            "file": "cifar10_large_clean.pth",
             "name": "WideResNet (Standard)",
         },
         {
             "arch": "cifar10_large",
             "data": "cifar10",
-            "file": "cifar_10_random/cifar10_large_robust.pth",
+            "file": "cifar10_large_robust.pth",
             "name": "WideResNet (Robust)",
         },
     ]
