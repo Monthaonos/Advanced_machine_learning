@@ -1,6 +1,7 @@
 # Dossier des modèles (lourds)
 data/
 checkpoints/
+results/
 
 # Fichiers générés par Python
 __pycache__/

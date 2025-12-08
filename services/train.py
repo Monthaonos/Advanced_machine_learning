@@ -2,8 +2,7 @@
 Unified Training Script.
 
 Usage:
-    python -m services.train.train --model-type cifar10 --epochs 10 --device cuda
-    python -m services.train.train --model-type cifar10_large --epochs 100 --learning-rate 0.1 --storage-path "s3://..."
+    python -m services.train --model-type cifar10 --prefix mon_test_v1
 """
 
 import argparse
@@ -37,17 +36,16 @@ def get_training_components(model_type, device, learning_rate, batch_size):
         model_robust = SimpleCIFAR10CNN().to(device)
         opt_cls = optim.Adam
         opt_kwargs = {"lr": learning_rate}
-        prefix = "cifar10"
+        default_prefix = "cifar10"
 
     # 2. CIFAR-10 Large Configuration (WideResNet)
     elif model_type == "cifar10_large":
         train_loader, _ = get_cifar10_loaders(batch_size=batch_size)
         model_clean = WideResNet().to(device)
         model_robust = WideResNet().to(device)
-        # WideResNet uses SGD + Momentum
         opt_cls = optim.SGD
         opt_kwargs = {"lr": learning_rate, "momentum": 0.9, "weight_decay": 5e-4}
-        prefix = "cifar10_large"
+        default_prefix = "cifar10_large"
 
     # 3. GTSRB Configuration
     elif model_type == "gtsrb":
@@ -56,12 +54,12 @@ def get_training_components(model_type, device, learning_rate, batch_size):
         model_robust = GTSRBModel().to(device)
         opt_cls = optim.Adam
         opt_kwargs = {"lr": learning_rate}
-        prefix = "gtsrb"
+        default_prefix = "gtsrb"
 
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
-    return model_clean, model_robust, train_loader, opt_cls, opt_kwargs, prefix
+    return model_clean, model_robust, train_loader, opt_cls, opt_kwargs, default_prefix
 
 
 def parse_args():
@@ -77,6 +75,14 @@ def parse_args():
         choices=["cifar10", "cifar10_large", "gtsrb"],
         help="The architecture to train.",
     )
+
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default=None,
+        help="Override the filename prefix (e.g., 'my_experiment'). Default is model_type.",
+    )
+
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     parser.add_argument(
@@ -113,25 +119,33 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
+# --- CHANGEMENT ICI : On isole la logique dans run_training ---
+def run_training(args):
+    """
+    Exécute l'entraînement en utilisant un objet 'args' (Namespace).
+    Peut être appelé depuis le terminal OU depuis un autre script Python.
+    """
     device = torch.device(args.device)
 
     print(f"🚀 Starting Training: {args.model_type}")
     print(f"💾 Storage Path: {args.storage_path}")
 
     # 1. Get Components
-    model_clean, model_robust, train_loader, OptCls, opt_kwargs, prefix = (
+    model_clean, model_robust, train_loader, OptCls, opt_kwargs, default_prefix = (
         get_training_components(
             args.model_type, device, args.learning_rate, args.batch_size
         )
     )
 
+    # --- LOGIQUE DE NOMMAGE ---
+    final_prefix = args.prefix if args.prefix else default_prefix
+    print(f"🏷️  Prefix used for files: {final_prefix}")
+
     loss_fn = nn.CrossEntropyLoss()
     optimizer_clean = OptCls(model_clean.parameters(), **opt_kwargs)
     optimizer_robust = OptCls(model_robust.parameters(), **opt_kwargs)
 
-    # 2. Scheduler Setup (Only for WideResNet/SGD)
+    # 2. Scheduler Setup
     scheduler_clean = None
     scheduler_robust = None
 
@@ -144,10 +158,9 @@ def main():
             optimizer_robust, T_max=args.epochs
         )
 
-    # 3. File Names (DIRECT, sans sous-dossier forcé)
-    # Le fichier sera stocké directement dans args.storage_path
-    clean_filename = f"{prefix}_clean.pth"
-    robust_filename = f"{prefix}_robust.pth"
+    # 3. File Names
+    clean_filename = f"{final_prefix}_clean.pth"
+    robust_filename = f"{final_prefix}_robust.pth"
 
     # =========================================================
     # A. Train CLEAN Model
@@ -157,7 +170,7 @@ def main():
     )
 
     if not loaded_clean or args.force_retrain:
-        print(f"\n⚡️ Training {prefix} (Standard)...")
+        print(f"\n⚡️ Training {final_prefix} (Standard)...")
         train_models(
             train_dataloader=train_loader,
             model=model_clean,
@@ -183,7 +196,7 @@ def main():
     )
 
     if not loaded_robust or args.force_retrain:
-        print(f"\n⚡️ Training {prefix} (Adversarial/Robust)...")
+        print(f"\n⚡️ Training {final_prefix} (Adversarial/Robust)...")
         train_models(
             train_dataloader=train_loader,
             model=model_robust,
@@ -202,6 +215,12 @@ def main():
         save_checkpoint(model_robust, args.storage_path, robust_filename)
 
     print("\n✅ Training Pipeline Completed.")
+
+
+def main():
+    """Point d'entrée CLI : Lit les args du terminal et lance le cuisinier."""
+    args = parse_args()
+    run_training(args)
 
 
 if __name__ == "__main__":
