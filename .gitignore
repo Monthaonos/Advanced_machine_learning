@@ -2,6 +2,7 @@
 data/
 checkpoints/
 TEST_DAMIEN_CIFAR10/data/
+TEST_DAMIEN_CIFAR10/trained_models/
 
 # Fichiers générés par Python
 __pycache__/
