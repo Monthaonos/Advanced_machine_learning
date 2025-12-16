@@ -35,12 +35,16 @@ def get_architecture(arch_name, device):
 
 def parse_args():
     """Gère uniquement la lecture des arguments depuis le terminal."""
-    parser = argparse.ArgumentParser(description="Advanced Robustness Benchmark")
+    parser = argparse.ArgumentParser(
+        description="Advanced Robustness Benchmark"
+    )
 
     # 1. Configuration Matérielle
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument(
-        "--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu"
+        "--device",
+        type=str,
+        default="cuda" if torch.cuda.is_available() else "cpu",
     )
 
     # 2. Configuration des Chemins
@@ -60,7 +64,9 @@ def parse_args():
         help="Dossier où sauvegarder le CSV (Output).",
     )
 
-    parser.add_argument("--output-filename", type=str, default="benchmark_results.csv")
+    parser.add_argument(
+        "--output-filename", type=str, default="benchmark_results.csv"
+    )
 
     # 3. Cible et Noms
     parser.add_argument(
@@ -153,7 +159,9 @@ def run_evaluation(args):
         model = get_architecture(sc["arch"], device)
 
         # On lit depuis storage-path (INPUT)
-        loaded = manage_checkpoint(model, args.storage_path, sc["file"], device=device)
+        loaded = manage_checkpoint(
+            model, args.storage_path, sc["file"], device=device
+        )
 
         if loaded:
             stats = run_evaluation_suite(

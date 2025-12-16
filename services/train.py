@@ -44,7 +44,11 @@ def get_training_components(model_type, device, learning_rate, batch_size):
         model_clean = WideResNet().to(device)
         model_robust = WideResNet().to(device)
         opt_cls = optim.SGD
-        opt_kwargs = {"lr": learning_rate, "momentum": 0.9, "weight_decay": 5e-4}
+        opt_kwargs = {
+            "lr": learning_rate,
+            "momentum": 0.9,
+            "weight_decay": 5e-4,
+        }
         default_prefix = "cifar10_large"
 
     # 3. GTSRB Configuration
@@ -59,7 +63,14 @@ def get_training_components(model_type, device, learning_rate, batch_size):
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
-    return model_clean, model_robust, train_loader, opt_cls, opt_kwargs, default_prefix
+    return (
+        model_clean,
+        model_robust,
+        train_loader,
+        opt_cls,
+        opt_kwargs,
+        default_prefix,
+    )
 
 
 def parse_args():
@@ -83,8 +94,12 @@ def parse_args():
         help="Override the filename prefix (e.g., 'my_experiment'). Default is model_type.",
     )
 
-    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs.")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of epochs."
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=64, help="Batch size."
+    )
     parser.add_argument(
         "--learning-rate", type=float, default=1e-3, help="Learning rate."
     )
@@ -131,10 +146,15 @@ def run_training(args):
     print(f"💾 Storage Path: {args.storage_path}")
 
     # 1. Get Components
-    model_clean, model_robust, train_loader, OptCls, opt_kwargs, default_prefix = (
-        get_training_components(
-            args.model_type, device, args.learning_rate, args.batch_size
-        )
+    (
+        model_clean,
+        model_robust,
+        train_loader,
+        OptCls,
+        opt_kwargs,
+        default_prefix,
+    ) = get_training_components(
+        args.model_type, device, args.learning_rate, args.batch_size
     )
 
     # --- LOGIQUE DE NOMMAGE ---
@@ -150,7 +170,9 @@ def run_training(args):
     scheduler_robust = None
 
     if args.model_type == "cifar10_large":
-        print(f"🔧 Activation Scheduler (CosineAnnealing) pour {args.model_type}")
+        print(
+            f"🔧 Activation Scheduler (CosineAnnealing) pour {args.model_type}"
+        )
         scheduler_clean = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer_clean, T_max=args.epochs
         )

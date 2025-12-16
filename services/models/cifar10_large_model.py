@@ -3,18 +3,42 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# --- AJOUT : Classe de Normalisation ---
+class Normalization(nn.Module):
+    def __init__(self, mean, std):
+        super(Normalization, self).__init__()
+        # On enregistre mean et std comme des "buffers" persistants.
+        # Cela permet à PyTorch de gérer automatiquement le déplacement vers GPU/CPU
+        # quand on fait model.to(device).
+        self.register_buffer("mean", torch.tensor(mean).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor(std).view(1, 3, 1, 1))
+
+    def forward(self, x):
+        return (x - self.mean) / self.std
+
+
 class BasicBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
         super(BasicBlock, self).__init__()
         self.bn1 = nn.BatchNorm2d(in_planes)
         self.relu1 = nn.ReLU(inplace=True)
         self.conv1 = nn.Conv2d(
-            in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False
+            in_planes,
+            out_planes,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
         )
         self.bn2 = nn.BatchNorm2d(out_planes)
         self.relu2 = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(
-            out_planes, out_planes, kernel_size=3, stride=1, padding=1, bias=False
+            out_planes,
+            out_planes,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
         )
         self.droprate = dropRate
         self.equalInOut = in_planes == out_planes
@@ -44,9 +68,24 @@ class BasicBlock(nn.Module):
 
 
 class Network(nn.Module):
-    def __init__(self, depth=28, widen_factor=10, dropRate=0.3, num_classes=10):
+    def __init__(
+        self, depth=28, widen_factor=10, dropRate=0.3, num_classes=10
+    ):
         super(Network, self).__init__()
-        nChannels = [16, 16 * widen_factor, 32 * widen_factor, 64 * widen_factor]
+
+        # --- AJOUT : Normalisation Interne (Stats CIFAR-10) ---
+        # Le modèle s'attend désormais à recevoir des images en [0, 1]
+        self.normalize = Normalization(
+            mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]
+        )
+        # ------------------------------------------------------
+
+        nChannels = [
+            16,
+            16 * widen_factor,
+            32 * widen_factor,
+            64 * widen_factor,
+        ]
         assert (depth - 4) % 6 == 0
         n = (depth - 4) // 6
         block = BasicBlock
@@ -77,14 +116,18 @@ class Network(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                nn.init.kaiming_normal_(
+                    m.weight, mode="fan_out", nonlinearity="relu"
+                )
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
-    def _make_layer(self, block, in_planes, out_planes, nb_layers, stride, dropRate):
+    def _make_layer(
+        self, block, in_planes, out_planes, nb_layers, stride, dropRate
+    ):
         layers = []
         for i in range(nb_layers):
             layers.append(
@@ -98,7 +141,11 @@ class Network(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        out = self.conv1(x)
+        # --- AJOUT : On applique la normalisation en TOUT PREMIER ---
+        out = self.normalize(x)
+        # ------------------------------------------------------------
+
+        out = self.conv1(out)
         out = self.block1(out)
         out = self.block2(out)
         out = self.block3(out)

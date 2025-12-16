@@ -37,7 +37,9 @@ def save_model(model: nn.Module, path: str) -> None:
     torch.save(model.state_dict(), path_obj)
 
 
-def load_model(model: nn.Module, path: str, device: Optional[str] = None) -> nn.Module:
+def load_model(
+    model: nn.Module, path: str, device: Optional[str] = None
+) -> nn.Module:
     """Load a model's parameters from disk into the provided instance.
 
     Args:

@@ -3,9 +3,26 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# --- AJOUT : La classe de Normalisation (La même que pour WideResNet) ---
+class Normalization(nn.Module):
+    def __init__(self, mean, std):
+        super(Normalization, self).__init__()
+        self.register_buffer("mean", torch.tensor(mean).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor(std).view(1, 3, 1, 1))
+
+    def forward(self, x):
+        return (x - self.mean) / self.std
+
+
 class SimpleCIFAR10CNN(nn.Module):
     def __init__(self, num_classes: int = 10):
         super().__init__()
+
+        # --- AJOUT ICI : Normalisation Interne (Stats CIFAR-10) ---
+        self.normalize = Normalization(
+            mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]
+        )
+        # ----------------------------------------------------------
 
         # --- Block 1: Apprendre les formes simples ---
         # Entrée: 32x32 -> Sortie: 16x16
@@ -13,10 +30,10 @@ class SimpleCIFAR10CNN(nn.Module):
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),  # On augmente la profondeur
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # Division de la taille par 2
+            nn.MaxPool2d(2, 2),
         )
 
         # --- Block 2: Apprendre les motifs complexes ---
@@ -41,25 +58,24 @@ class SimpleCIFAR10CNN(nn.Module):
         )
 
         # --- Classifier ---
-        # Dropout pour éviter le par-coeur (Overfitting)
         self.dropout = nn.Dropout(0.5)
-
-        # Calcul taille: 256 canaux * 4 pixels * 4 pixels = 4096
         self.fc1 = nn.Linear(256 * 4 * 4, 1024)
         self.fc2 = nn.Linear(1024, num_classes)
 
     def forward(self, x):
+        # --- AJOUT ICI : On normalise d'abord ---
+        x = self.normalize(x)
+        # ----------------------------------------
+
         x = self.block1(x)
         x = self.block2(x)
         x = self.block3(x)
 
-        # Aplatir
         x = torch.flatten(x, 1)
 
-        # Classification
         x = self.dropout(x)
         x = F.relu(self.fc1(x))
-        x = self.dropout(x)  # Encore un peu de dropout avant la fin
+        x = self.dropout(x)
         x = self.fc2(x)
 
         return x

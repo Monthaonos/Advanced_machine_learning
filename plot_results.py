@@ -67,7 +67,9 @@ def save_plot(fig, output_dir, filename):
 
 def parse_args():
     """Analyse les arguments de la ligne de commande."""
-    parser = argparse.ArgumentParser(description="Benchmark Visualization Tool")
+    parser = argparse.ArgumentParser(
+        description="Benchmark Visualization Tool"
+    )
 
     parser.add_argument(
         "--input-files",
@@ -77,7 +79,10 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--output-dir", type=str, default="plots", help="Directory to save the plots."
+        "--output-dir",
+        type=str,
+        default="plots",
+        help="Directory to save the plots.",
     )
 
     parser.add_argument(
@@ -140,7 +145,9 @@ def run_plotting(args):
             data=df, x="Attack", y="Loss", hue="Model", palette="magma"
         )
 
-        plt.title("Model Stability Comparison (Cross-Entropy Loss)", fontsize=16)
+        plt.title(
+            "Model Stability Comparison (Cross-Entropy Loss)", fontsize=16
+        )
         plt.ylabel("Loss", fontsize=12)
         plt.xlabel("Attack Type", fontsize=12)
         plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0)

@@ -8,45 +8,45 @@ def get_cifar10_loaders(
     batch_size: int = 64, num_workers: int = 2
 ) -> Tuple[DataLoader, DataLoader]:
     """
-    Crée les dataloaders pour CIFAR-10 avec la normalisation standard
-    et l'augmentation des données pour l'entraînement (version WideResNet).
+    Crée les dataloaders pour CIFAR-10.
+
+    CORRECTION ROBUSTESSE :
+    La normalisation a été retirée d'ici pour être placée à l'intérieur du modèle.
+    Les images sortent donc en [0, 1].
 
     Args:
-        batch_size: Taille du lot (batch) pour les DataLoader.
-        num_workers: Nombre de processus pour le chargement des données.
+        batch_size: Taille du lot (batch).
+        num_workers: Nombre de processus.
 
     Returns:
-        Un tuple contenant (train_loader, test_loader).
+        Un tuple (train_loader, test_loader).
     """
 
-    # Statistiques de normalisation (Moyenne, Écart-type) sur le set d'entraînement CIFAR-10
-    # Ces valeurs sont essentielles pour centrer les données autour de 0.
-    stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    # NOTE : Les stats sont conservées ici pour référence, mais NE SONT PLUS utilisées
+    # dans le loader. Vous devez les utiliser dans la première couche de votre modèle.
+    # stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
 
-    # --- Transformations pour l'entraînement (Augmentation + Normalisation) ---
+    # --- Transformations pour l'entraînement (Augmentation UNIQUEMENT) ---
     transform_train = transforms.Compose(
         [
             # 1. Augmentation: Recadrage aléatoire avec padding
             transforms.RandomCrop(32, padding=4, padding_mode="reflect"),
             # 2. Augmentation: Retournement horizontal aléatoire
             transforms.RandomHorizontalFlip(),
-            # 3. Conversion en tenseur
+            # 3. Conversion en tenseur (Met les pixels en [0, 1])
             transforms.ToTensor(),
-            # 4. Normalisation (L'étape cruciale pour la convergence)
-            transforms.Normalize(*stats),
         ]
     )
 
-    # --- Transformations pour le test (Juste Normalisation) ---
+    # --- Transformations pour le test ---
     transform_test = transforms.Compose(
         [
             transforms.ToTensor(),
-            transforms.Normalize(*stats),
+            # PAS DE NORMALISATION ICI
         ]
     )
 
     # --- Chargement des Datasets ---
-    # Télécharge les données si elles ne sont pas dans le dossier './data'
     train_set = datasets.CIFAR10(
         root="./data", train=True, download=True, transform=transform_train
     )
@@ -59,15 +59,15 @@ def get_cifar10_loaders(
     train_loader = DataLoader(
         train_set,
         batch_size=batch_size,
-        shuffle=True,  # Important pour l'entraînement
+        shuffle=True,
         num_workers=num_workers,
-        pin_memory=True,  # Accélère le transfert vers le GPU
+        pin_memory=True,
     )
 
     test_loader = DataLoader(
         test_set,
         batch_size=batch_size,
-        shuffle=False,  # Pas de mélange pour le test
+        shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
     )
