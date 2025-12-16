@@ -8,7 +8,9 @@ from torch import nn
 
 # Configuration for SSP Cloud
 S3_ENDPOINT = "https://minio.lab.sspcloud.fr"
-fs = s3fs.S3FileSystem(client_kwargs={"endpoint_url": S3_ENDPOINT})  # S3 connection
+fs = s3fs.S3FileSystem(
+    client_kwargs={"endpoint_url": S3_ENDPOINT}
+)  # S3 connection
 
 # A. basic fonctions
 
@@ -22,7 +24,9 @@ def save_model(model: nn.Module, path: str) -> None:
     torch.save(model.state_dict(), path_obj)
 
 
-def load_model(model: nn.Module, path: str, device: Optional[str] = None) -> nn.Module:
+def load_model(
+    model: nn.Module, path: str, device: Optional[str] = None
+) -> nn.Module:
     """Charge les paramètres d'un modèle à partir du disque."""
     path_obj = Path(path)
     if not path_obj.is_file():
@@ -79,7 +83,9 @@ def manage_checkpoint(model, storage_path, model_filename, device="cpu"):
                 temp_filename = os.path.basename(model_filename)
                 temp_path = f"/tmp/{temp_filename}"
 
-                print(f"⬇️  Modèle trouvé sur S3. Téléchargement vers {temp_path}...")
+                print(
+                    f"⬇️  Modèle trouvé sur S3. Téléchargement vers {temp_path}..."
+                )
                 fs.get(s3_obj_path, temp_path)
 
                 load_model(model, temp_path, device=device)
@@ -158,3 +164,43 @@ def save_results(df: pd.DataFrame, storage_path: str, filename: str):
             fs.put(local_path, s3_obj_path)
         except Exception as e:
             print(f"⚠️ Erreur Upload CSV S3 : {e}")
+
+
+def save_training_metrics(
+    loss_history: list, storage_path: str, filename: str
+):
+    """
+    Sauvegarde l'historique de la perte (loss) en format CSV.
+    Structure identique à save_results pour garantir la cohérence S3/Local.
+    """
+    # 1. Préparation des données (on réutilise pandas pour coller à ta logique)
+    df = pd.DataFrame(
+        {"epoch": range(1, len(loss_history) + 1), "loss": loss_history}
+    )
+
+    is_s3 = storage_path.startswith("s3://")
+
+    # Local save
+    local_path = get_local_path(storage_path, filename)
+
+    try:
+        df.to_csv(
+            local_path, index=False
+        )  # index=False car on a déjà la colonne epoch
+        print(
+            f"📈 Métriques d'entraînement sauvegardées localement : {local_path}"
+        )
+    except Exception as e:
+        print(f"❌ Erreur sauvegarde CSV locale (metrics) : {e}")
+        return
+
+    # S3 upload
+    if is_s3:
+        s3_path = f"{storage_path.rstrip('/')}/{filename}"
+        s3_obj_path = s3_path.replace("s3://", "")
+
+        print(f"⬆️  Upload des métriques vers S3 : {s3_path}")
+        try:
+            fs.put(local_path, s3_obj_path)
+        except Exception as e:
+            print(f"⚠️ Erreur Upload CSV S3 (metrics) : {e}")

@@ -13,7 +13,11 @@ from torch import optim
 from dotenv import load_dotenv
 
 # Shared Services
-from services.storage_manager import manage_checkpoint, save_checkpoint
+from services.storage_manager import (
+    manage_checkpoint,
+    save_checkpoint,
+    save_training_metrics,
+)
 from services.core import train_models
 
 # Import Loaders and Models
@@ -193,7 +197,7 @@ def run_training(args):
 
     if not loaded_clean or args.force_retrain:
         print(f"\n⚡️ Training {final_prefix} (Standard)...")
-        train_models(
+        clean_history = train_models(
             train_dataloader=train_loader,
             model=model_clean,
             loss_fn=loss_fn,
@@ -209,6 +213,11 @@ def run_training(args):
             scheduler=scheduler_clean,
         )
         save_checkpoint(model_clean, args.storage_path, clean_filename)
+        save_training_metrics(
+            clean_history,
+            args.storage_path,
+            f"{final_prefix}_clean_metrics.csv",
+        )
 
     # =========================================================
     # B. Train ROBUST Model
@@ -219,7 +228,7 @@ def run_training(args):
 
     if not loaded_robust or args.force_retrain:
         print(f"\n⚡️ Training {final_prefix} (Adversarial/Robust)...")
-        train_models(
+        robust_history = train_models(
             train_dataloader=train_loader,
             model=model_robust,
             loss_fn=loss_fn,
@@ -235,6 +244,11 @@ def run_training(args):
             scheduler=scheduler_robust,
         )
         save_checkpoint(model_robust, args.storage_path, robust_filename)
+        save_training_metrics(
+            robust_history,
+            args.storage_path,
+            f"{final_prefix}_robust_metrics.csv",
+        )
 
     print("\n✅ Training Pipeline Completed.")
 

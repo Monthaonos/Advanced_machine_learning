@@ -5,7 +5,7 @@ from typing import Tuple
 
 
 def get_cifar10_loaders(
-    batch_size: int = 64, num_workers: int = 2
+    batch_size: int = 64, num_workers: int = 6
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Crée les dataloaders pour CIFAR-10.
