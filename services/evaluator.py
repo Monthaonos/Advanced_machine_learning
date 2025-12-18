@@ -13,8 +13,8 @@ def run_evaluation_suite(
         attack_configs (dict): dictionnary of configs.
         Ex: {
             "Clean": {"fn": None, "kwargs": {}},
-            "FGSM_Small": {"fn": fgsm_attack, "kwargs": {"epsilon": 0.01}},
-            "PGD_Strong": {"fn": pgd_attack, "kwargs": {"epsilon": 0.03, "steps": 20}}
+            "FGSM": {"fn": fgsm_attack, "kwargs": {"epsilon": 0.01}},
+            "MiM": {"fn": mim_attack, "kwargs": {"epsilon": 0.03, "decay": 1.0}}
         }
     """
     results = []

@@ -10,6 +10,7 @@ from services.evaluator import run_evaluation_suite
 from services.attacks import (
     fgsm_attack,
     pgd_attack,
+    mim_attack,
 )
 
 # Loaders & Models
@@ -23,7 +24,7 @@ load_dotenv()
 
 
 def get_architecture(arch_name, device):
-    """Factory pour instancier le squelette du modèle vide."""
+    """Factory to instantiate the model skeleton."""
     if arch_name == "cifar10":
         return SimpleCIFAR10CNN().to(device)
     if arch_name == "cifar10_large":
@@ -34,12 +35,12 @@ def get_architecture(arch_name, device):
 
 
 def parse_args():
-    """Gère uniquement la lecture des arguments depuis le terminal."""
+    """Handles CLI argument parsing."""
     parser = argparse.ArgumentParser(
         description="Advanced Robustness Benchmark"
     )
 
-    # 1. Configuration Matérielle
+    # 1. Hardware Configuration
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument(
         "--device",
@@ -47,61 +48,60 @@ def parse_args():
         default="cuda" if torch.cuda.is_available() else "cpu",
     )
 
-    # 2. Configuration des Chemins
+    # 2. Path Configuration
     default_ckpt_root = os.getenv("CHECKPOINT_ROOT", "checkpoints")
 
     parser.add_argument(
         "--storage-path",
         type=str,
         default=default_ckpt_root,
-        help="Racine où sont stockés les modèles (Input).",
+        help="Root directory for input models.",
     )
 
     parser.add_argument(
         "--results-path",
         type=str,
         required=True,
-        help="Dossier où sauvegarder le CSV (Output).",
+        help="Directory to save the results CSV.",
     )
 
     parser.add_argument(
         "--output-filename", type=str, default="benchmark_results.csv"
     )
 
-    # 3. Cible et Noms
+    # 3. Target and Naming
     parser.add_argument(
         "--target",
         type=str,
         required=True,
         choices=["cifar10", "cifar10_large", "gtsrb"],
-        help="Quelle architecture évaluer ?",
+        help="Model architecture to evaluate.",
     )
 
-    # --- Argument Prefix ---
     parser.add_argument(
         "--prefix",
         type=str,
         default=None,
-        help="Le préfixe utilisé lors de l'entraînement (ex: 'cifar10_small'). Si vide, utilise le nom de la target.",
+        help="Training prefix (e.g., 'cifar10_small'). Defaults to target name if empty.",
     )
 
     return parser.parse_args()
 
 
-# --- CHANGEMENT ICI : On isole la logique dans run_evaluation ---
 def run_evaluation(args):
     """
-    Exécute l'évaluation en utilisant un objet 'args' (Namespace).
-    Peut être appelé depuis le terminal OU depuis un autre script Python.
+    Executes the evaluation pipeline using provided arguments.
+    Can be called via CLI or external Python script.
     """
     device = torch.device(args.device)
 
-    # Gestion du préfixe par défaut
+    # Handle default prefix
     file_prefix = args.prefix if args.prefix else args.target
 
     # ==========================================
-    # A. CONFIGURATION DES ATTAQUES
+    # A. ATTACK CONFIGURATION
     # ==========================================
+    # Standard perturbation budget and step size for CIFAR-10/GTSRB
     EPS = 8 / 255
     ALPHA = 2 / 255
 
@@ -112,10 +112,21 @@ def run_evaluation(args):
             "fn": pgd_attack,
             "kwargs": {"epsilon": EPS, "alpha": ALPHA, "num_steps": 10},
         },
+        # Momentum Iterative Method (MIM)
+        # Uses momentum to stabilize update directions and escape local maxima
+        "MIM_10": {
+            "fn": mim_attack,
+            "kwargs": {
+                "epsilon": EPS,
+                "alpha": ALPHA,
+                "num_steps": 10,
+                "decay": 1.0,  # Momentum decay factor (1.0 accumulates full history)
+            },
+        },
     }
 
     # ==========================================
-    # B. CATALOGUE DYNAMIQUE
+    # B. DYNAMIC CATALOG
     # ==========================================
     scenarios = [
         {
@@ -132,33 +143,33 @@ def run_evaluation(args):
         },
     ]
 
-    print(f"🎯 Cible : {args.target} avec préfixe '{file_prefix}'")
+    print(f"🎯 Target: {args.target} with prefix '{file_prefix}'")
 
     # ==========================================
-    # C. CHARGEMENT DONNÉES
+    # C. DATA LOADING
     # ==========================================
     loaders = {}
     dataset_name = scenarios[0]["data"]
 
     if dataset_name == "cifar10":
-        print("⏳ Chargement CIFAR-10...")
+        print("⏳ Loading CIFAR-10...")
         _, loaders["cifar10"] = get_cifar10_loaders(batch_size=args.batch_size)
     elif dataset_name == "gtsrb":
-        print("⏳ Chargement GTSRB...")
+        print("⏳ Loading GTSRB...")
         _, loaders["gtsrb"] = get_gtsrb_loaders(batch_size=args.batch_size)
 
     all_results = []
 
     # ==========================================
-    # D. EXÉCUTION
+    # D. EXECUTION LOOP
     # ==========================================
     for sc in scenarios:
-        print(f"\n🧠 Modèle : {sc['name']}")
-        print(f"   Fichier cherché : {sc['file']}")
+        print(f"\n🧠 Model: {sc['name']}")
+        print(f"   File: {sc['file']}")
 
         model = get_architecture(sc["arch"], device)
 
-        # On lit depuis storage-path (INPUT)
+        # Load model from storage
         loaded = manage_checkpoint(
             model, args.storage_path, sc["file"], device=device
         )
@@ -174,28 +185,28 @@ def run_evaluation(args):
             )
             all_results.extend(stats)
         else:
-            print(f"⚠️ Ignoré (Fichier introuvable) : {sc['file']}")
+            print(f"⚠️ Skipped (File not found): {sc['file']}")
 
     # ==========================================
-    # E. SAUVEGARDE
+    # E. SAVING RESULTS
     # ==========================================
     if all_results:
         df = pd.DataFrame(all_results)
-        print("\n📊 Aperçu :")
+        print("\n📊 Preview:")
         try:
             print(df.pivot(index="Model", columns="Attack", values="Accuracy"))
         except:
             print(df.head())
 
-        print(f"\n💾 Sauvegarde vers : {args.results_path}")
+        print(f"\n💾 Saving to: {args.results_path}")
         save_results(df, args.results_path, args.output_filename)
 
     else:
-        print("❌ Aucun résultat à sauvegarder.")
+        print("❌ No results to save.")
 
 
 def main():
-    """Point d'entrée CLI : Lit les args du terminal et lance le cuisinier."""
+    """CLI Entry Point."""
     args = parse_args()
     run_evaluation(args)
 

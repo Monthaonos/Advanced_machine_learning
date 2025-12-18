@@ -29,6 +29,8 @@ def train_models(
 
     model.to(device)
 
+    loss_history = []
+
     for epoch in range(epochs):
         model.train()
 
@@ -70,6 +72,9 @@ def train_models(
 
             epoch_bar.set_postfix({"loss": f"{avg_loss:.4f}"})
 
+        epoch_loss = running_loss / len(train_dataloader)
+        loss_history.append(epoch_loss)
+
         # --- AJOUT 2 : Mise à jour du Scheduler (Fin d'époque) ---
         if scheduler is not None:
             # On dit au scheduler : "Une époque est passée, ajuste le LR !"
@@ -82,4 +87,4 @@ def train_models(
                 f"📉 Fin Époque {epoch + 1} -> Learning Rate ajusté à : {current_lr:.6f}"
             )
 
-    return
+    return loss_history

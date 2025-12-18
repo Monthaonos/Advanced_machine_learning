@@ -1,0 +1,23 @@
+# config.toml
+
+[experiment]
+batch_size = 64
+device = "cuda"
+output_filename = "benchmark_results.csv"
+
+[attacks.defaults]
+# 8/255 approx 0.03137. It is often better to define specific float values
+epsilon = 0.031372549 
+alpha = 0.007843137    # 2/255
+
+[attacks.fgsm]
+enabled = true
+
+[attacks.pgd]
+enabled = true
+num_steps = 10
+
+[attacks.mim]
+enabled = true
+num_steps = 10
+decay = 1.0
