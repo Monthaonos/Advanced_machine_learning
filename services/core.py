@@ -1,11 +1,13 @@
 import torch
 from torch import nn
+from torch.optim.lr_scheduler import LRScheduler
 from tqdm import tqdm
+from typing import List, Optional, Union
 from services.attacks import pgd_attack
 
 
 def train_models(
-    train_dataloader,
+    train_dataloader: torch.utils.data.DataLoader,
     model: nn.Module,
     loss_fn: nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -14,40 +16,45 @@ def train_models(
     num_steps: int,
     prob: float = 1.0,
     random_start: bool = True,
-    clamp_min: float = 0.0,
-    clamp_max: float = 1.0,
-    epochs: int = 10,
     pgd_robust: bool = False,
-    device: torch.device | str | None = None,
-    # --- AJOUT 1 : L'argument scheduler (optionnel) ---
-    scheduler: torch.optim.lr_scheduler.LRScheduler = None,
-):
+    scheduler: Optional[LRScheduler] = None,
+    epochs: int = 10,
+    device: Optional[Union[torch.device, str]] = None,
+) -> List[float]:
+    """
+    Performs standard or adversarial training of the model.
+    """
+
+    # 1. Device Management
     if device is None:
         device = next(model.parameters()).device
     else:
         device = torch.device(device)
-
-    model.to(device)
+        model.to(device)
 
     loss_history = []
 
     for epoch in range(epochs):
         model.train()
 
+        # Progress bar
         epoch_bar = tqdm(
             train_dataloader, desc=f"Epoch {epoch + 1}/{epochs}", leave=False
         )
         running_loss = 0.0
 
-        # --- Boucle des Batchs (L'entraînement pur) ---
+        # --- Batch Loop ---
         for batch_idx, (x, y) in enumerate(epoch_bar, start=1):
             x = x.to(device)
             y = y.to(device)
 
-            should_attack = torch.bernoulli(torch.tensor(prob)).item() == 1.0
+            # Determine if this specific batch should be attacked (stochastic AT)
+            should_attack = torch.rand(1).item() <= prob
 
             if pgd_robust and should_attack:
-                model.eval()  # PGD se fait souvent en mode eval (optionnel mais propre)
+                model.eval()
+
+                # Generate adversarial examples
                 x_adv = pgd_attack(
                     model=model,
                     images=x,
@@ -55,36 +62,36 @@ def train_models(
                     epsilon=epsilon,
                     alpha=alpha,
                     num_steps=num_steps,
+                    random_start=random_start,  # <--- ON LE PASSE A L'ATTAQUE
                 )
-                model.train()  # On repasse en train pour la backward pass
+
+                model.train()
                 inputs = x_adv
             else:
                 inputs = x
 
+            # Standard Optimization Step
             optimizer.zero_grad()
             y_hat = model(inputs)
             loss = loss_fn(y_hat, y)
             loss.backward()
             optimizer.step()
 
+            # Logging
             running_loss += loss.item()
             avg_loss = running_loss / batch_idx
-
             epoch_bar.set_postfix({"loss": f"{avg_loss:.4f}"})
 
+        # End of Epoch Stats
         epoch_loss = running_loss / len(train_dataloader)
         loss_history.append(epoch_loss)
 
-        # --- AJOUT 2 : Mise à jour du Scheduler (Fin d'époque) ---
+        # --- Scheduler Step ---
         if scheduler is not None:
-            # On dit au scheduler : "Une époque est passée, ajuste le LR !"
             scheduler.step()
-
-            # (Juste pour l'affichage) On récupère la nouvelle valeur pour vérifier
             current_lr = scheduler.get_last_lr()[0]
-            # On utilise print ou tqdm.write pour ne pas casser la barre de progression
             tqdm.write(
-                f"📉 Fin Époque {epoch + 1} -> Learning Rate ajusté à : {current_lr:.6f}"
+                f"📉 End of Epoch {epoch + 1} -> LR updated to: {current_lr:.6f}"
             )
 
     return loss_history

@@ -3,80 +3,146 @@ import s3fs
 import torch
 import pandas as pd
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Union
 from torch import nn
 
-# Configuration for SSP Cloud
+# --- Configuration for SSP Cloud / MinIO ---
+# Ideally, these should be loaded from environment variables for security/portability.
 S3_ENDPOINT = "https://minio.lab.sspcloud.fr"
-fs = s3fs.S3FileSystem(
-    client_kwargs={"endpoint_url": S3_ENDPOINT}
-)  # S3 connection
 
-# A. basic fonctions
+# Initialize S3 FileSystem
+# Note: This requires appropriate environment variables (AWS_ACCESS_KEY_ID, etc.) to be set.
+try:
+    fs = s3fs.S3FileSystem(client_kwargs={"endpoint_url": S3_ENDPOINT})
+except Exception as e:
+    print(f"⚠️ Warning: Could not initialize S3 connection: {e}")
+    fs = None
+
+# ==========================================
+# A. Basic File Operations
+# ==========================================
 
 
 def save_model(model: nn.Module, path: str) -> None:
-    """Sauvegarde le state_dict d'un modèle PyTorch vers un fichier."""
+    """
+    Saves the model's state dictionary to a file.
+
+    Args:
+        model (nn.Module): The PyTorch model to save.
+        path (str): Local destination path.
+    """
     path_obj = Path(path)
+    # Ensure extension is .pth
     if path_obj.suffix == "":
         path_obj = path_obj.with_suffix(".pth")
+
+    # Create parent directories if they don't exist
     path_obj.parent.mkdir(parents=True, exist_ok=True)
+
     torch.save(model.state_dict(), path_obj)
 
 
 def load_model(
-    model: nn.Module, path: str, device: Optional[str] = None
+    model: nn.Module,
+    path: str,
+    device: Optional[Union[str, torch.device]] = None,
 ) -> nn.Module:
-    """Charge les paramètres d'un modèle à partir du disque."""
+    """
+    Loads model weights from a file.
+
+    Args:
+        model (nn.Module): The model architecture instance.
+        path (str): Local path to the weights file.
+        device (str | torch.device, optional): Device to map the location to (cpu/cuda).
+
+    Returns:
+        nn.Module: The model with loaded weights.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
     path_obj = Path(path)
     if not path_obj.is_file():
         raise FileNotFoundError(f"Checkpoint '{path}' does not exist.")
 
-    map_location = None
-    if device is not None:
-        map_location = device
-
-    state_dict = torch.load(path_obj, map_location=map_location)
+    # Handle device mapping (crucial when loading a GPU model on CPU)
+    state_dict = torch.load(path_obj, map_location=device)
     model.load_state_dict(state_dict)
     return model
 
 
-# B. Function to create robust paths
+# ==========================================
+# B. Path Management
+# ==========================================
 
 
 def get_local_path(storage_path: str, filename: str) -> str:
     """
-    Résout le chemin local absolu pour le fichier (modèle ou csv).
-    Garantit que les chemins relatifs sont ancrés à la racine d'exécution (CWD).
+    Resolves the absolute local path for a file.
+
+    If an S3 path is provided, it mirrors the S3 structure locally to avoid
+    overwriting files from different buckets/prefixes.
+
+    Args:
+        storage_path (str): The base path (local or 's3://...').
+        filename (str): The name of the file.
+
+    Returns:
+        str: The absolute local path to the file.
     """
-    # Extrait le chemin local, même si l'input est S3
+    # Extract local directory structure
     if storage_path.startswith("s3://"):
-        # Ex: "s3://bucket/prefix/path" -> "prefix/path"
+        # Example: "s3://bucket/prefix/path" -> "prefix/path"
         parts = storage_path.replace("s3://", "").split("/", 1)
-        # Si le path S3 est juste le bucket, on utilise un dossier temporaire
-        local_dir = parts[1] if len(parts) > 1 else ".tmp_s3_checkpoints"
+        # If path is just the bucket, use a temp folder, else use the subfolder structure
+        local_dir = parts[1] if len(parts) > 1 else ".tmp_s3_storage"
     else:
         local_dir = storage_path
 
-    # Rend le chemin absolu et crée les dossiers
+    # Ensure absolute path and create directories
     abs_dir = os.path.abspath(local_dir)
     os.makedirs(abs_dir, exist_ok=True)
+
     return os.path.join(abs_dir, filename)
 
 
-# C. High-level functions
+# ==========================================
+# C. High-Level Management (S3 + Local)
+# ==========================================
 
 
-def manage_checkpoint(model, storage_path, model_filename, device="cpu"):
-    """Tries to load the model from storage_path (S3 or Local)."""
+def manage_checkpoint(
+    model: nn.Module,
+    storage_path: str,
+    model_filename: str,
+    device: Optional[Union[str, torch.device]] = "cpu",
+) -> bool:
+    """
+    Attempts to load a model checkpoint from storage (S3 or Local).
+
+    If S3 is used, it downloads the file to a temporary location first.
+
+    Args:
+        model (nn.Module): The model to populate.
+        storage_path (str): The directory path (local or s3://).
+        model_filename (str): The filename of the checkpoint.
+        device (str): Device to load the model onto.
+
+    Returns:
+        bool: True if loading was successful, False otherwise.
+    """
     is_s3 = storage_path.startswith("s3://")
 
-    # S3
+    # --- S3 Handling ---
     if is_s3:
+        if fs is None:
+            print("❌ S3 connection not available.")
+            return False
+
         full_path = f"{storage_path.rstrip('/')}/{model_filename}"
         s3_obj_path = full_path.replace("s3://", "")
 
-        print(f"\n🔎 Recherche S3 : {full_path}")
+        print(f"\n🔎 Searching S3: {full_path}")
 
         try:
             if fs.exists(s3_obj_path):
@@ -84,123 +150,127 @@ def manage_checkpoint(model, storage_path, model_filename, device="cpu"):
                 temp_path = f"/tmp/{temp_filename}"
 
                 print(
-                    f"⬇️  Modèle trouvé sur S3. Téléchargement vers {temp_path}..."
+                    f"⬇️  Checkpoint found on S3. Downloading to {temp_path}..."
                 )
                 fs.get(s3_obj_path, temp_path)
 
                 load_model(model, temp_path, device=device)
-                os.remove(temp_path)
-                print("✅ Modèle téléchargé et chargé avec succès.")
+
+                # Clean up temp file
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+                print("✅ Model successfully downloaded and loaded.")
                 return True
             else:
-                print(f"❌ Modèle absent du S3 : {s3_obj_path}")
+                print(f"❌ Checkpoint not found on S3: {s3_obj_path}")
         except Exception as e:
-            print(f"⚠️ Erreur S3 (Connexion/Téléchargement) : {e}")
+            print(f"⚠️ S3 Error (Connection/Download): {e}")
             return False
 
-    # Local
+    # --- Local Handling ---
     else:
         full_path = get_local_path(storage_path, model_filename)
-        print(f"\n🔎 Recherche Local : {full_path}")
+        print(f"\n🔎 Searching Local: {full_path}")
         try:
             if os.path.exists(full_path):
                 load_model(model, full_path, device=device)
-                print("✅ Modèle trouvé et chargé localement.")
+                print("✅ Model found and loaded locally.")
                 return True
             else:
-                print("❌ Modèle absent localement.")
+                print("❌ Checkpoint not found locally.")
         except Exception as e:
-            print(f"⚠️ Erreur chargement local : {e}")
+            print(f"⚠️ Local Loading Error: {e}")
             return False
 
     return False
 
 
-def save_checkpoint(model, storage_path, model_filename):
-    """Saves locally the model and eventually uploads it on S3."""
+def save_checkpoint(
+    model: nn.Module, storage_path: str, model_filename: str
+) -> None:
+    """
+    Saves the model locally and optionally uploads it to S3.
+
+    Args:
+        model (nn.Module): The model to save.
+        storage_path (str): Destination directory (local or s3://).
+        model_filename (str): Filename for the checkpoint.
+    """
     is_s3 = storage_path.startswith("s3://")
 
-    # Local save
+    # 1. Always save locally first (as cache or source for upload)
     local_path = get_local_path(storage_path, model_filename)
     save_model(model, local_path)
-    print(f"💾 Modèle sauvegardé localement : {local_path}")
+    print(f"💾 Model saved locally: {local_path}")
 
-    # S3 upload
+    # 2. Upload to S3 if requested
     if is_s3:
+        if fs is None:
+            print("⚠️ Skipping S3 upload (No connection).")
+            return
+
         full_path = f"{storage_path.rstrip('/')}/{model_filename}"
         s3_obj_path = full_path.replace("s3://", "")
 
-        print(f"⬆️  Upload vers S3 : {full_path}")
+        print(f"⬆️  Uploading to S3: {full_path}")
         try:
             fs.put(local_path, s3_obj_path)
         except Exception as e:
-            print(f"⚠️ Erreur d'Upload S3 : {e}")
+            print(f"⚠️ S3 Upload Error: {e}")
 
 
-def save_results(df: pd.DataFrame, storage_path: str, filename: str):
+def save_results(
+    df: pd.DataFrame, storage_path: str, filename: str, index: bool = False
+) -> None:
     """
-    Saves a Pandas DataFrame in CSV format.
-    Deals with local save/S3 upload.
+    Saves a Pandas DataFrame to CSV (Local + Optional S3).
+
+    Args:
+        df (pd.DataFrame): The data to save.
+        storage_path (str): Destination directory.
+        filename (str): Name of the CSV file.
+        index (bool): Whether to include the DataFrame index in the CSV.
     """
     is_s3 = storage_path.startswith("s3://")
-
-    # Local save
     local_path = get_local_path(storage_path, filename)
 
     try:
-        df.to_csv(local_path, index=True)
-        print(f"📊 Résultats sauvegardés localement : {local_path}")
+        df.to_csv(local_path, index=index)
+        print(f"📊 Results saved locally: {local_path}")
     except Exception as e:
-        print(f"❌ Erreur sauvegarde CSV locale : {e}")
+        print(f"❌ Error saving local CSV: {e}")
         return
 
-    # S3 upload
     if is_s3:
+        if fs is None:
+            return
+
         s3_path = f"{storage_path.rstrip('/')}/{filename}"
         s3_obj_path = s3_path.replace("s3://", "")
 
-        print(f"⬆️  Upload des résultats vers S3 : {s3_path}")
+        print(f"⬆️  Uploading results to S3: {s3_path}")
         try:
             fs.put(local_path, s3_obj_path)
         except Exception as e:
-            print(f"⚠️ Erreur Upload CSV S3 : {e}")
+            print(f"⚠️ S3 CSV Upload Error: {e}")
 
 
 def save_training_metrics(
-    loss_history: list, storage_path: str, filename: str
-):
+    loss_history: List[float], storage_path: str, filename: str
+) -> None:
     """
-    Sauvegarde l'historique de la perte (loss) en format CSV.
-    Structure identique à save_results pour garantir la cohérence S3/Local.
+    Converts loss history list to CSV and saves it.
+
+    Args:
+        loss_history (List[float]): List of loss values per epoch.
+        storage_path (str): Destination directory.
+        filename (str): Name of the CSV file.
     """
-    # 1. Préparation des données (on réutilise pandas pour coller à ta logique)
+    # Create a DataFrame for structured storage
     df = pd.DataFrame(
         {"epoch": range(1, len(loss_history) + 1), "loss": loss_history}
     )
 
-    is_s3 = storage_path.startswith("s3://")
-
-    # Local save
-    local_path = get_local_path(storage_path, filename)
-
-    try:
-        df.to_csv(
-            local_path, index=False
-        )  # index=False car on a déjà la colonne epoch
-        print(
-            f"📈 Métriques d'entraînement sauvegardées localement : {local_path}"
-        )
-    except Exception as e:
-        print(f"❌ Erreur sauvegarde CSV locale (metrics) : {e}")
-        return
-
-    # S3 upload
-    if is_s3:
-        s3_path = f"{storage_path.rstrip('/')}/{filename}"
-        s3_obj_path = s3_path.replace("s3://", "")
-
-        print(f"⬆️  Upload des métriques vers S3 : {s3_path}")
-        try:
-            fs.put(local_path, s3_obj_path)
-        except Exception as e:
-            print(f"⚠️ Erreur Upload CSV S3 (metrics) : {e}")
+    # Delegate to the generic save_results function
+    save_results(df, storage_path, filename, index=False)

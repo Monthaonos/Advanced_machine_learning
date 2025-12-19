@@ -1,18 +1,36 @@
 import torch
 import torch.nn as nn
+from typing import Optional
 
 
-def fgsm_attack(model, images, labels, epsilon, **kwargs):
+def fgsm_attack(
+    model: nn.Module,
+    images: torch.Tensor,
+    labels: torch.Tensor,
+    epsilon: float,
+    **kwargs,
+) -> torch.Tensor:
     """
-    Fast Gradient Sign Method (FGSM).
-    One-step attack that moves the image in the direction of the gradient.
+    Generates adversarial examples using the Fast Gradient Sign Method (FGSM).
+
+    Reference: Goodfellow et al., "Explaining and Harnessing Adversarial Examples" (2014).
+
+    Args:
+        model (nn.Module): The neural network model (should include normalization wrapper).
+        images (torch.Tensor): Input images in range [0, 1].
+        labels (torch.Tensor): Ground truth labels.
+        epsilon (float): Perturbation magnitude (L-infinity constraint).
+        **kwargs: Placeholder for compatibility with other attack signatures.
+
+    Returns:
+        torch.Tensor: Adversarial images clamped to [0, 1].
     """
-    # If no perturbation is allowed, return original images
+    # Optimization: If no perturbation is allowed, return original images immediately.
     if epsilon == 0:
         return images
 
-    # Create a copy of the images to avoid modifying the original tensor in-place
-    # .detach() ensures we start with a leaf tensor for the new graph
+    # Clone and detach to create a new leaf node for the computation graph.
+    # This prevents modifying the original tensor in-place.
     images = images.clone().detach().to(images.device)
     labels = labels.to(images.device)
     images.requires_grad = True
@@ -21,32 +39,45 @@ def fgsm_attack(model, images, labels, epsilon, **kwargs):
     outputs = model(images)
     loss = nn.CrossEntropyLoss()(outputs, labels)
 
-    # Backward pass to calculate gradients w.r.t the input image
+    # Backward pass to calculate gradients w.r.t input
     model.zero_grad()
     loss.backward()
 
-    # Get the direction of the gradient (Sign of the gradient)
+    # Collect the element-wise sign of the data gradient
     data_grad = images.grad.data
 
-    # Create the perturbed image by adjusting each pixel by epsilon
+    # Craft adversarial image: x_adv = x + epsilon * sign(gradient)
     perturbed_image = images + epsilon * data_grad.sign()
 
-    # Clip the image to ensure pixel values remain in the valid range [0, 1]
+    # Clip to maintain valid pixel range [0, 1]
     return torch.clamp(perturbed_image, 0, 1)
 
 
 def pgd_attack(
-    model,
-    images,
-    labels,
-    epsilon,
-    alpha=2 / 255,
-    num_steps=10,
+    model: nn.Module,
+    images: torch.Tensor,
+    labels: torch.Tensor,
+    epsilon: float,
+    alpha: float = 2 / 255,
+    num_steps: int = 10,
     **kwargs,
-):
+) -> torch.Tensor:
     """
-    Projected Gradient Descent (PGD).
-    Iterative version of FGSM with random start and projection.
+    Generates adversarial examples using Projected Gradient Descent (PGD).
+    This is essentially an iterative version of FGSM with random initialization.
+
+    Reference: Madry et al., "Towards Deep Learning Models Resistant to Adversarial Attacks" (2017).
+
+    Args:
+        model (nn.Module): The target model.
+        images (torch.Tensor): Clean images [0, 1].
+        labels (torch.Tensor): True labels.
+        epsilon (float): Maximum perturbation (L-infinity norm).
+        alpha (float): Step size for each iteration. Default: 2/255.
+        num_steps (int): Number of attack iterations. Default: 10.
+
+    Returns:
+        torch.Tensor: Adversarial images [0, 1].
     """
     if epsilon == 0:
         return images
@@ -54,11 +85,11 @@ def pgd_attack(
     images = images.to(images.device)
     labels = labels.to(images.device)
 
-    # Keep a copy of original images to compute the perturbation constraint (eta) later
+    # Keep original images for projection step (epsilon constraint)
     original_images = images.clone().detach()
 
-    # Random Start: Initialize with uniform random noise within [-epsilon, epsilon]
-    # This helps explore the loss landscape better than starting at 0
+    # Random Start (Exploration):
+    # Initialize with uniform random noise inside the epsilon ball [-eps, +eps].
     images = images + torch.empty_like(images).uniform_(-epsilon, epsilon)
     images = torch.clamp(images, 0, 1)
 
@@ -72,36 +103,45 @@ def pgd_attack(
         model.zero_grad()
         loss.backward()
 
-        # Update images: Move a small step (alpha) in the direction of the gradient
+        # Iterative update: move by alpha in gradient direction
         adv_images = images + alpha * images.grad.sign()
 
         # Projection Step:
-        # 1. Calculate the total perturbation (adv - original)
-        # 2. Clip this perturbation to be within [-epsilon, epsilon] (L-infinity constraint)
+        # 1. Calculate perturbation (adv - original)
+        # 2. Clip perturbation to [-epsilon, epsilon]
         eta = torch.clamp(
             adv_images - original_images, min=-epsilon, max=epsilon
         )
 
-        # 3. Apply perturbation to original image and clip to valid pixel range [0, 1]
-        # .detach() is crucial here to prevent memory leaks (stops building a huge graph)
+        # 3. Apply perturbation to original image and enforce [0, 1] pixel range
+        # .detach() is critical to truncate the graph and prevent memory leaks
         images = torch.clamp(original_images + eta, min=0, max=1).detach()
 
     return images
 
 
 def mim_attack(
-    model,
-    images,
-    labels,
-    epsilon,
-    alpha=2 / 255,
-    num_steps=10,
-    decay=1.0,
+    model: nn.Module,
+    images: torch.Tensor,
+    labels: torch.Tensor,
+    epsilon: float,
+    alpha: float = 2 / 255,
+    num_steps: int = 10,
+    decay: float = 1.0,
     **kwargs,
-):
+) -> torch.Tensor:
     """
-    Momentum Iterative Method (MIM).
-    Iterative attack that uses momentum to escape local maxima and stabilize the update direction.
+    Generates adversarial examples using Momentum Iterative Method (MIM).
+    Uses momentum to stabilize update directions and escape local maxima.
+
+    Reference: Dong et al., "Boosting Adversarial Attacks with Momentum" (2018).
+
+    Args:
+        decay (float): Momentum decay factor (mu). Default: 1.0.
+        (Other args same as PGD)
+
+    Returns:
+        torch.Tensor: Adversarial images [0, 1].
     """
     if epsilon == 0:
         return images
@@ -110,7 +150,7 @@ def mim_attack(
     labels = labels.to(images.device)
     original_images = images.clone().detach()
 
-    # Apply random start (often used in MIM as well to improve robustness)
+    # Random start (improves robustness against defense)
     images = images + torch.empty_like(images).uniform_(-epsilon, epsilon)
     images = torch.clamp(images, 0, 1)
 
@@ -128,19 +168,20 @@ def mim_attack(
 
         grad = images.grad.data
 
-        # Normalize the gradient by its L1 norm (Mean Absolute Value)
-        # This ensures the scale of the gradient doesn't affect the update magnitude too much
-        # Added 1e-12 to avoid division by zero
+        # Normalize gradient by L1 norm (Mean Absolute Value)
+        # This stabilizes the magnitude of updates across iterations
         grad_norm = torch.mean(torch.abs(grad), dim=(1, 2, 3), keepdim=True)
-        grad = grad / (grad_norm + 1e-12)
+        grad = grad / (
+            grad_norm + 1e-12
+        )  # Add small epsilon to avoid div by zero
 
-        # Update momentum: accumulate gradients with decay factor
+        # Accumulate momentum: g_{t+1} = mu * g_t + (grad / ||grad||_1)
         momentum = momentum * decay + grad
 
-        # Update images using the sign of the accumulated momentum
+        # Update image using sign of momentum
         images = images.detach() + alpha * momentum.sign()
 
-        # Projection Step (same as PGD)
+        # Projection step (L-infinity constraint)
         delta = torch.clamp(images - original_images, -epsilon, epsilon)
         images = torch.clamp(original_images + delta, 0, 1)
 

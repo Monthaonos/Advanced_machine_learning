@@ -1,23 +1,33 @@
 # config.toml
 
-[experiment]
-batch_size = 64
-device = "cuda"
-output_filename = "benchmark_results.csv"
+[project]
+seed = 42
+device = "msp"  # "cuda", "mps" (mac), ou "cpu"
+storage_path = "./checkpoints" # Ou "s3://mon-bucket/projet"
 
-[attacks.defaults]
-# 8/255 approx 0.03137. It is often better to define specific float values
-epsilon = 0.031372549 
-alpha = 0.007843137    # 2/255
+[data]
+dataset = "cifar10"  # "cifar10" ou "gtsrb"
+batch_size = 256
+num_workers = 6
 
-[attacks.fgsm]
-enabled = true
+[model]
+architecture = "simple_cnn" # "simple_cnn", "resnet18", "wideresnet"
+prefix = "experiment_v1"  # Pour nommer les fichiers de sortie
 
-[attacks.pgd]
-enabled = true
+[training]
+epochs = 10
+learning_rate = 0.001
+momentum = 0.9
+weight_decay = 5e-4
+force_retrain = false
+
+[adversarial]
+epsilon = 0.03137  # 8/255
+alpha = 0.00784    # 2/255
 num_steps = 10
+random_start = true
+train_prob = 1.0   # Proba d'attaquer un batch pendant l'entraînement
 
-[attacks.mim]
-enabled = true
-num_steps = 10
-decay = 1.0
+[evaluation]
+batch_size = 100
+attacks_to_run = ["Clean", "FGSM", "PGD", "MIM"]
