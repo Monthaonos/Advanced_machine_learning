@@ -3,7 +3,7 @@
 [project]
 seed = 42
 device = "mps"  # "cuda", "mps" (mac), ou "cpu"
-storage_path = "./checkpoints" # Ou "s3://mon-bucket/projet"
+storage_path = "/content/drive/MyDrive/AML/checkpoints"
 
 [data]
 dataset = "cifar10"  # "cifar10" ou "gtsrb"

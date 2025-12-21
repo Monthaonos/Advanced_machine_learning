@@ -1,16 +1,6 @@
-"""
-Unified Evaluation Service.
-Runs evaluation metrics on Clean and Robust models defined in config.toml.
-
-It leverages the TOML configuration to dynamically build the attack suite
-(FGSM, PGD, MIM, etc.) and handles data loading via factories.
-
-Usage:
-    python -m services.evaluation --model resnet18 --dataset cifar10
-"""
-
 import argparse
 import torch
+import os
 import pandas as pd
 from typing import Dict, Any, List
 
@@ -27,14 +17,7 @@ def build_attack_suite(
     attack_names: List[str], adv_config: Dict[str, Any]
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Dynamically constructs the dictionary of attack configurations based on TOML settings.
-
-    Args:
-        attack_names (List[str]): List of attacks to run (e.g., ["Clean", "PGD"]).
-        adv_config (dict): The 'adversarial' section from config.toml containing epsilon, alpha, etc.
-
-    Returns:
-        Dict: A dictionary compatible with run_evaluation_suite.
+    Dynamically constructs the attack configurations based on merged settings.
     """
     suite = {}
     eps = adv_config["epsilon"]
@@ -45,10 +28,7 @@ def build_attack_suite(
         suite["Clean"] = {"fn": None, "kwargs": {}}
 
     if "FGSM" in attack_names:
-        suite["FGSM"] = {
-            "fn": fgsm_attack,
-            "kwargs": {"epsilon": eps},
-        }
+        suite["FGSM"] = {"fn": fgsm_attack, "kwargs": {"epsilon": eps}}
 
     if "PGD" in attack_names:
         suite["PGD"] = {
@@ -72,20 +52,15 @@ def build_attack_suite(
 
 def run_evaluation(args: argparse.Namespace, config: Dict[str, Any]):
     """
-    Main execution logic for the evaluation pipeline.
-
-    1. Loads Configuration (CLI overrides TOML).
-    2. Loads Test Data.
-    3. Builds Attack Suite.
-    4. Evaluates Clean and Robust models found in storage.
-    5. Saves aggregated results to CSV.
+    Orchestrates the evaluation pipeline with CLI > TOML priority.
     """
     # 1. Merge Configuration
     dataset = args.dataset or config["data"]["dataset"]
     model_name = args.model or config["model"]["architecture"]
-    batch_size = args.batch_size or config["evaluation"]["batch_size"]
+    batch_size = args.batch_size or config["evaluation"].get("batch_size", 128)
     storage_path = args.storage_path or config["project"]["storage_path"]
 
+    # Device management
     device_name = args.device or config["project"].get("device", "cpu")
     device = torch.device(
         device_name
@@ -94,175 +69,111 @@ def run_evaluation(args: argparse.Namespace, config: Dict[str, Any]):
     )
 
     # Prefix management
-    prefix = args.prefix or config["model"].get("prefix")
-    if not prefix:
-        prefix = f"{dataset}_{model_name}"
+    prefix = (
+        args.prefix
+        or config["model"].get("prefix")
+        or f"{dataset}_{model_name}"
+    )
+
+    # Results directory management (AML/results)
+    results_path = storage_path.replace("checkpoints", "results")
+    os.makedirs(results_path, exist_ok=True)
 
     print(f"📊 Starting Evaluation Pipeline")
     print(f"   Dataset: {dataset} | Model: {model_name}")
-    print(f"   Prefix:  {prefix}")
-    print(f"   Device:  {device}")
+    print(f"   Prefix:  {prefix} | Device: {device}")
 
     # 2. Data Loading (Test set only)
-    print("📦 Loading Test Data...")
     _, test_loader, num_classes, in_channels = get_dataloaders(
         dataset, batch_size=batch_size
     )
 
-    # 3. Build Attack Suite from Config
-    requested_attacks = config["evaluation"].get("attacks_to_run", ["Clean"])
-    # Allow CLI override for epsilon/steps if provided, else use TOML
+    # 3. Build Attack Suite with Merged Adversarial Hyperparameters
     adv_conf = config["adversarial"].copy()
-    if args.epsilon:
+    if args.epsilon is not None:
         adv_conf["epsilon"] = args.epsilon
-    if args.num_steps:
+    if args.num_steps is not None:
         adv_conf["num_steps"] = args.num_steps
 
+    requested_attacks = config["evaluation"].get(
+        "attacks_to_run", ["Clean", "PGD"]
+    )
     attack_suite = build_attack_suite(requested_attacks, adv_conf)
-    print(f"⚔️  Attacks scheduled: {list(attack_suite.keys())}")
 
-    # ==========================================
-    # A. Evaluate Standard (Clean) Model
-    # ==========================================
-    print("\n🔹 Evaluating Standard (Clean) Model...")
-    model_clean = get_model(model_name, dataset, num_classes, in_channels).to(
-        device
-    )
+    # 4. Evaluation Loop
+    all_results = []
+    variants = ["clean", "robust"]
 
-    clean_filename = f"{prefix}_{dataset}_{model_name}_clean.pth"
-
-    if manage_checkpoint(model_clean, storage_path, clean_filename, device):
-        results_clean = run_evaluation_suite(
-            model=model_clean,
-            model_name=f"{model_name}_Clean",
-            dataset_name=dataset,
-            dataloader=test_loader,
-            attack_configs=attack_suite,
-            device=device,
+    for variant in variants:
+        print(f"\n🔹 Evaluating Variant: {variant.upper()}")
+        model = get_model(model_name, dataset, num_classes, in_channels).to(
+            device
         )
-    else:
-        print(f"⚠️ Warning: {clean_filename} not found. Skipping.")
-        results_clean = []
 
-    # ==========================================
-    # B. Evaluate Robust (Adversarial) Model
-    # ==========================================
-    print("\n🔹 Evaluating Robust (Adversarial) Model...")
-    model_robust = get_model(model_name, dataset, num_classes, in_channels).to(
-        device
-    )
+        # Build filename: test2_cifar10_resnet18_clean.pth
+        filename = f"{prefix}_{dataset}_{model_name}_{variant}.pth"
 
-    robust_filename = f"{prefix}_{dataset}_{model_name}_robust.pth"
+        if manage_checkpoint(model, storage_path, filename, device):
+            stats = run_evaluation_suite(
+                model=model,
+                model_name=f"{model_name}_{variant.capitalize()}",
+                dataset_name=dataset,
+                dataloader=test_loader,
+                attack_configs=attack_suite,
+                device=device,
+            )
+            all_results.extend(stats)
+        else:
+            print(
+                f"⚠️ Warning: {filename} not found in {storage_path}. Skipping."
+            )
 
-    if manage_checkpoint(model_robust, storage_path, robust_filename, device):
-        results_robust = run_evaluation_suite(
-            model=model_robust,
-            model_name=f"{model_name}_Robust",
-            dataset_name=dataset,
-            dataloader=test_loader,
-            attack_configs=attack_suite,
-            device=device,
-        )
-    else:
-        print(f"⚠️ Warning: {robust_filename} not found. Skipping.")
-        results_robust = []
-
-    # ==========================================
-    # C. Save Aggregated Results
-    # ==========================================
-    all_results = results_clean + results_robust
-
+    # 5. Save Aggregated Results to AML/results
     if all_results:
         df = pd.DataFrame(all_results)
-
-        # Display a nice preview
         print("\n📝 Results Summary:")
-        # Pivot table for better readability in console (Model vs Attack)
         try:
-            preview = df.pivot(
-                index="Model", columns="Attack", values="Accuracy"
-            )
-            print(preview)
-        except Exception:
-            print(df[["Model", "Attack", "Accuracy"]])
+            print(df.pivot(index="Model", columns="Attack", values="Accuracy"))
+        except:
+            print(df.head())
 
-        # Save to CSV
-        output_filename = f"{prefix}_{dataset}_evaluation_report.csv"
-        save_results(df, storage_path, output_filename)
-    else:
-        print("\n❌ No results collected (Models not found).")
+        output_filename = (
+            f"{prefix}_{dataset}_{model_name}_evaluation_report.csv"
+        )
+        save_results(df, results_path, output_filename)
+        print(f"✅ Report saved to: {results_path}/{output_filename}")
 
 
 def parse_args():
-    """
-    Parses command line arguments to optionally override TOML configuration.
-    """
-    parser = argparse.ArgumentParser(
-        description="Unified Evaluation Service. Runs attacks on trained models.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    parser = argparse.ArgumentParser(description="Unified Evaluation Service")
 
-    # 1. Project & Hardware
+    # Hardware & Paths
     parser.add_argument(
-        "--storage-path",
-        type=str,
-        help="Root directory where checkpoints are stored (Local or S3). Defaults to [project.storage_path].",
+        "--storage-path", type=str, help="Path to checkpoints."
     )
-    parser.add_argument(
-        "--device",
-        type=str,
-        choices=["cpu", "cuda", "mps"],
-        help="Computation device. Defaults to [project.device].",
-    )
+    parser.add_argument("--device", type=str, choices=["cpu", "cuda", "mps"])
 
-    # 2. Model & Data Selection
+    # Model & Data
+    parser.add_argument("--dataset", type=str, choices=["cifar10", "gtsrb"])
+    parser.add_argument("--model", type=str, help="e.g., resnet18, wideresnet")
     parser.add_argument(
-        "--dataset",
-        type=str,
-        choices=["cifar10", "gtsrb"],
-        help="Target dataset. Defaults to [data.dataset].",
+        "--prefix", type=str, help="Filename prefix (e.g., test2)"
     )
-    parser.add_argument(
-        "--model",
-        type=str,
-        help="Model architecture (e.g., 'resnet18'). Defaults to [model.architecture].",
-    )
-    parser.add_argument(
-        "--prefix",
-        type=str,
-        help="Specific filename prefix (e.g. 'exp_v1'). If None, uses {dataset}_{model}.",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        help="Evaluation batch size. Defaults to [evaluation.batch_size].",
-    )
+    parser.add_argument("--batch-size", type=int)
 
-    # 3. Adversarial Parameters (Specific to PGD/MIM/FGSM)
-    parser.add_argument(
-        "--epsilon",
-        type=float,
-        help="Maximum perturbation budget (L-inf norm). Defaults to [adversarial.epsilon].",
-    )
-    parser.add_argument(
-        "--num-steps",
-        type=int,
-        help="Number of iterations for iterative attacks (PGD/MIM). Defaults to [adversarial.num_steps].",
-    )
+    # Attack Hyperparameters
+    parser.add_argument("--epsilon", type=float)
+    parser.add_argument("--num-steps", type=int)
 
     return parser.parse_args()
 
 
 if __name__ == "__main__":
-    # 1. Load TOML
     try:
-        config = load_config("config.toml")
+        config_data = load_config("config.toml")
     except Exception as e:
         print(f"⚠️ Error loading config.toml: {e}")
         exit(1)
 
-    # 2. Parse CLI
-    args = parse_args()
-
-    # 3. Run
-    run_evaluation(args, config)
+    args_data = parse_args()
+    run_evaluation(args_data, config_data)
