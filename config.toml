@@ -2,7 +2,7 @@
 
 [project]
 seed = 42
-device = "mps"  # "cuda", "mps" (mac), ou "cpu"
+device = "cuda"  # "cuda", "mps" (mac), ou "cpu"
 storage_path = "/content/drive/MyDrive/AML/checkpoints"
 
 [data]
