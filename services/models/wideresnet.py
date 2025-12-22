@@ -77,6 +77,9 @@ class NetworkBlock(nn.Module):
             )
         return nn.Sequential(*layers)
 
+    def forward(self, x):
+        return self.layer(x)
+
 
 class WideResNet(nn.Module):
     """
