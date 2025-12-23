@@ -14,7 +14,7 @@ def train_models(
     epsilon: float,
     alpha: float,
     num_steps: int,
-    prob: float = 1.0,
+    train_prob: float = 1.0,
     random_start: bool = True,
     pgd_robust: bool = False,
     scheduler: Optional[LRScheduler] = None,
@@ -49,7 +49,7 @@ def train_models(
             y = y.to(device)
 
             # Determine if this specific batch should be attacked (stochastic AT)
-            should_attack = torch.rand(1).item() <= prob
+            should_attack = torch.rand(1).item() <= train_prob
 
             if pgd_robust and should_attack:
                 model.eval()
@@ -62,7 +62,7 @@ def train_models(
                     epsilon=epsilon,
                     alpha=alpha,
                     num_steps=num_steps,
-                    random_start=random_start,  # <--- ON LE PASSE A L'ATTAQUE
+                    random_start=random_start,
                 )
 
                 model.train()

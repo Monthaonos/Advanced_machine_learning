@@ -4,11 +4,11 @@ from .simple_cnn import SimpleCNN
 from .resnet import ResNet18
 from .wideresnet import WideResNet
 
-# Valeurs standard (ImageNet/CIFAR) - À adapter selon tes besoins précis
+# Standard values for CIFAR10
 CIFAR10_MEAN = [0.4914, 0.4822, 0.4465]
 CIFAR10_STD = [0.2023, 0.1994, 0.2010]
 
-# Pour GTSRB, souvent on utilise [0.5, 0.5, 0.5] ou on calcule les stats réelles
+# Standard values for GTSRB
 GTSRB_MEAN = [0.3337, 0.3064, 0.3171]
 GTSRB_STD = [0.2672, 0.2564, 0.2629]
 
