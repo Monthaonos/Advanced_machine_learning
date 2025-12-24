@@ -1,33 +1,41 @@
 # config.toml
 
 [project]
-seed = 42
-device = "cuda"  # "cuda", "mps" (mac), ou "cpu"
-storage_path = "/content/drive/MyDrive/AML/checkpoints"
+seed = 42           # Ensures reproducibility by fixing random number generators.
+device = "cuda"     # Hardware accelerator: "cuda" (NVIDIA), "mps" (Apple), or "cpu".
+storage_path = "/content/drive/MyDrive/AML/checkpoints" # Destination for saved .pth files.
 
 [data]
-dataset = "cifar10"  # "cifar10" ou "gtsrb"
-batch_size = 256
-num_workers = 6
+dataset = "cifar10" # Target dataset: "cifar10" or "gtsrb".
+batch_size = 256    # Number of samples processed in a single training iteration.
+num_workers = 6     # Number of parallel CPU threads for data loading.
 
 [model]
-architecture = "simple_cnn" # "simple_cnn", "resnet18", "wideresnet"
-prefix = "experiment_v1"  # Pour nommer les fichiers de sortie
+architecture = "simple_cnn" # Model topology: "simple_cnn", "resnet18", or "wideresnet".
+prefix = "experiment_v1"    # String prefix for naming output files and logs.
 
 [training]
-epochs = 10
-learning_rate = 0.001
-momentum = 0.9
-weight_decay = 5e-4
-force_retrain = false
+epochs = 10             # Total number of full passes through the training set.
+learning_rate = 0.001   # Step size for weight updates during optimization.
+momentum = 0.9          # Acceleration factor for SGD optimizer to dampen oscillations.
+weight_decay = 5e-4     # L2 regularization factor to prevent model overfitting.
+force_retrain = false   # If true, ignores existing checkpoints and starts from scratch.
 
 [adversarial]
-epsilon = 0.03137  # 8/255
-alpha = 0.00784    # 2/255
-num_steps = 10
-random_start = true
-train_prob = 1.0   # Proba d'attaquer un batch pendant l'entraînement
+epsilon = 0.03137   # Max L-infinity perturbation (approx. 8/255).
+alpha = 0.00784     # Step size for iterative attacks like PGD or MIM (approx. 2/255).
+num_steps = 10      # Number of iterations for adversarial sample generation.
+random_start = true # Starts perturbation from a random point within the epsilon ball.
+train_prob = 1.0    # Probability of using adversarial examples during each training batch.
+
+[patch_attack]
+scale = 0.3              # Ratio of image area covered by the adversarial sticker.
+rotation_max = 22.5      # Maximum random rotation angle applied to the patch for robustness.
+learning_rate = 0.05     # Optimization rate for the patch pixel values.
+number_of_steps = 500    # Iterations used to optimize the "universal" patch.
+batch_size = 32          # Batch size used specifically for patch training.
+optimizer = "Adam"       # Optimizer type used to update the patch.
 
 [evaluation]
 batch_size = 100
-attacks_to_run = ["Clean", "FGSM", "PGD", "MIM"]
+attacks_to_run = ["Clean", "FGSM", "PGD", "MIM"] # Protocols for performance reporting.

@@ -34,5 +34,4 @@ def get_dataloaders(
             f"Dataset '{dataset_name}' not supported. Available: cifar10, gtsrb"
         )
 
-    # On renvoie bien 4 valeurs maintenant
     return train_loader, test_loader, num_classes, in_channels

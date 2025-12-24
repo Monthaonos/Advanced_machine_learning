@@ -155,7 +155,7 @@ def run_training(args: argparse.Namespace, config: Dict[str, Any]):
             optimizer=optimizer_clean,
             scheduler=scheduler_clean,
             epsilon=0.0,  # Irrelevant for standard training
-            prob=0.0,
+            train_prob=0.0,
             alpha=0.0,
             num_steps=0,
             epochs=epochs,
@@ -206,7 +206,7 @@ def run_training(args: argparse.Namespace, config: Dict[str, Any]):
             optimizer=optimizer_robust,
             scheduler=scheduler_robust,
             epsilon=epsilon,
-            prob=train_prob,
+            train_prob=train_prob,
             alpha=alpha,
             num_steps=num_steps,
             random_start=random_start,
