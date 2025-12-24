@@ -3,6 +3,7 @@ import torch.nn as nn
 from typing import Optional
 import torch.optim as optim
 import os
+import random
 
 
 def fgsm_attack(
@@ -188,13 +189,6 @@ def mim_attack(
         images = torch.clamp(original_images + delta, 0, 1)
 
     return images
-
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import os
-import random
 
 
 class UniversalPatchAttack:
