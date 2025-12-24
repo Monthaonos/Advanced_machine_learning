@@ -190,30 +190,39 @@ def mim_attack(
     return images
 
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import os
+import random
+
+
 class UniversalPatchAttack:
     """
     Implementation of the Universal Adversarial Patch optimization.
-    The patch is a localized sticker optimized to maximize the model's loss
-    across a distribution of images (CIFAR-10 or GTSRB).
+    Optimized for robustness across positions and images.
     """
 
-    def __init__(self, model: nn.Module, config: dict):
+    def __init__(self, model: nn.Module, patch_config: dict):
         """
         Initializes the patch optimization environment.
-        :param model: The target neural network (frozen during optimization).
-        :param config: Dictionary containing 'patch_attack' parameters from config.toml.
         """
         self.model = model
-        self.config = config
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.config = patch_config
 
-        # Determine patch size based on scale parameter (e.g., 0.3 for 30% coverage)
-        # For 32x32 images, scale 0.3 results in a ~10x10 patch.
-        self.patch_size = int(32 * config["scale"])
+        # Consistent device management (handling CUDA, MPS, and CPU)
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
 
-        # Initialize patch with random values in [0, 1] as a learnable parameter
+        # Patch size logic
+        self.image_size = 32  # CIFAR-10 / GTSRB default
+        self.patch_size = int(self.image_size * self.config["scale"])
+
+        # Initialize patch as a learnable parameter in [0, 1]
         self.patch = nn.Parameter(
             torch.rand(
                 (3, self.patch_size, self.patch_size), device=self.device
@@ -221,69 +230,81 @@ class UniversalPatchAttack:
         )
 
     def apply_patch(
-        self, images: torch.Tensor, x_coord: int = 11, y_coord: int = 11
+        self, images: torch.Tensor, x: int = None, y: int = None
     ) -> torch.Tensor:
         """
-        Applies the current patch onto a batch of images at fixed coordinates.
-        :param images: Input batch (N, C, H, W).
-        :param x_coord: Top-left horizontal position.
-        :param y_coord: Top-left vertical position.
-        :return: Patched images clamped to valid range.
+        Applies the patch to a batch of images.
+        If x or y are None, a random position is chosen for the batch.
         """
-        x_adv = images.clone()
-        # Overlay the patch on the target region
+        x_adv = images.clone().to(self.device)
+
+        # Limit coordinate range to keep the patch within image boundaries
+        max_coord = self.image_size - self.patch_size
+        x = x if x is not None else random.randint(0, max_coord)
+        y = y if y is not None else random.randint(0, max_coord)
+
         x_adv[
             :,
             :,
-            y_coord : y_coord + self.patch_size,
-            x_coord : x_coord + self.patch_size,
+            y : y + self.patch_size,
+            x : x + self.patch_size,
         ] = self.patch
+
         return torch.clamp(x_adv, 0, 1)
 
     def train_patch(self, train_loader: torch.utils.data.DataLoader):
         """
-        Optimization loop for the universal patch.
-        Objective: Maximize CrossEntropy loss over the training set.
-        Goal: argmax_P E_{(x,y)~D} [L(f(x + P), y)]
+        Optimization loop for the universal patch using Gradient Ascent.
+        Objective: maximize the expectation of the loss over the data distribution.
         """
-        self.model.eval()  # Ensure model is in eval mode (frozen weights)
+        self.model.eval()
+        for param in self.model.parameters():
+            param.requires_grad = False
 
-        # Setup optimizer based on config (e.g., "Adam")
         optimizer = optim.Adam([self.patch], lr=self.config["learning_rate"])
         criterion = nn.CrossEntropyLoss()
 
         num_steps = self.config["number_of_steps"]
+        current_step = 0
+
         print(
-            f"Starting Universal Patch optimization for {num_steps} iterations..."
+            f"[*] Optimizing {self.patch_size}x{self.patch_size} patch on {self.device}..."
         )
 
-        for step in range(num_steps):
-            try:
-                images, labels = next(iter(train_loader))
-            except StopIteration:
-                break  # End of data
+        # Standard loop through the loader to avoid overhead
+        while current_step < num_steps:
+            for images, labels in train_loader:
+                if current_step >= num_steps:
+                    break
 
-            images, labels = images.to(self.device), labels.to(self.device)
-            optimizer.zero_grad()
+                images, labels = images.to(self.device), labels.to(self.device)
+                optimizer.zero_grad()
 
-            # Apply patch and forward pass
-            patched_images = self.apply_patch(images)
-            outputs = self.model(patched_images)
+                # Apply patch at a random position during training for spatial invariance
+                patched_images = self.apply_patch(images)
 
-            # Minimize negative loss to achieve gradient ascent (maximize error)
-            loss = -criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+                outputs = self.model(patched_images)
 
-            # Ensure patch pixels remain within valid [0, 1] range
-            self.patch.data.clamp_(0, 1)
+                # Gradient Ascent: maximize loss to degrade performance
+                # Mathematical objective: \max_{P} \mathcal{L}(f(x + P), y)
+                loss = -criterion(outputs, labels)
 
-            if step % 50 == 0:
-                print(f"Step [{step}/{num_steps}] | Loss: {-loss.item():.4f}")
+                loss.backward()
+                optimizer.step()
+
+                # Project back to valid pixel range [0, 1]
+                self.patch.data.clamp_(0, 1)
+
+                if current_step % 20 == 0:
+                    print(
+                        f"    Step [{current_step}/{num_steps}] | Loss: {-loss.item():.4f}"
+                    )
+
+                current_step += 1
 
     def save(self, storage_path: str, filename: str):
-        """Persists the optimized patch tensor to the checkpoints directory."""
+        """Saves the patch tensor."""
         os.makedirs(storage_path, exist_ok=True)
         save_path = os.path.join(storage_path, filename)
-        torch.save(self.patch.data, save_path)
-        print(f"Patch saved successfully at: {save_path}")
+        torch.save(self.patch.data.cpu(), save_path)
+        print(f"[+] Patch saved to {save_path}")

@@ -1,0 +1,34 @@
+# config_test.toml - Minimal configuration for pipeline verification
+
+[project]
+device = "cpu"            # Use CPU for local verification
+storage_path = "./checkpoints_test"
+
+[data]
+dataset = "cifar10"
+batch_size = 128            # Minimal batch size for speed
+num_workers = 2           # Avoid multiprocessing overhead locally
+
+[model]
+architecture = "simple_cnn" # Smallest model available
+prefix = "smoke_test"
+
+[training]
+epochs = 1                # Single epoch for fast check
+learning_rate = 0.01
+force_retrain = true
+
+[adversarial]
+epsilon = 0.031
+alpha = 0.007
+num_steps = 2             # Minimal PGD steps
+train_prob = 1.0
+
+[patch_attack]
+scale = 0.2
+learning_rate = 0.1
+number_of_steps = 5       # Minimal steps to verify optimization loop
+
+[evaluation]
+batch_size = 4
+attacks_to_run = ["Clean", "FGSM"] # Limit the number of attacks

@@ -1,25 +1,35 @@
-# Dossier des modèles (lourds)
+# Model weights and large directories
 data/
-checkpoints/
-results/
+# Ignore everything starting with 'checkpoints' and 'results (folders and files)
+results*
+checkpoints*
 
-# Fichiers générés par Python
+# Python-generated files
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Environnement virtuel
+# Virtual environments
 venv/
 .venv/
 env/
+bin/
+lib/
+include/
 
-# Fichiers de données générés
+# Generated data files
 *.npy
 *.npz
 
-# Fichiers systèmes Mac
+# Operating system files
 .DS_Store
+Thumbs.db
 
-# Fichiers perso
+# Personal and experimental notebooks
 plots.ipynb
 signs.ipynb
 main_patch.ipynb
+
+# Configuration local overrides
+*.local.toml
