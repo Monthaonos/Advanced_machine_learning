@@ -5,16 +5,16 @@ device = "cuda" # or "cpu"
 storage_path = "checkpoints/" # Path for .pth files
 
 [data]
-dataset = "cifar10" # "cifar10" or "gtsrb"
-batch_size = 32
+dataset = "gtsrb" # "cifar10" or "gtsrb"
+batch_size = 128
 num_workers = 4
 
 [model]
-architecture = "simple_cnn" # "simple_cnn", "resnet18", "wideresnet"
-prefix = "test" # Used for naming checkpoints
+architecture = "resnet18" # "simple_cnn", "resnet18", "wideresnet"
+prefix = "test0" # Used for naming checkpoints
 
 [training]
-epochs = 50
+epochs = 20
 learning_rate = 0.001
 momentum = 0.9
 weight_decay = 5e-4
@@ -23,14 +23,14 @@ force_retrain = false
 [adversarial]
 epsilon = 0.03137 # 8/255
 alpha = 0.00784   # 2/255
-num_steps = 10
+num_steps = 6
 train_prob = 1.0  # P_train parameter for stochastic training
 random_start = true
 
 [patch_attack]
-scale = 0.2              # Patch coverage
+scale = 0.25              # Patch coverage
 learning_rate = 0.05
-number_of_steps = 100   # Optimization iterations
+number_of_steps = 1000   # Optimization iterations
 optimizer = "Adam"
 
 [evaluation]
