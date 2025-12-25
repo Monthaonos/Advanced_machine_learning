@@ -7,14 +7,24 @@ from typing import Tuple
 
 def get_gtsrb_loaders(
     batch_size: int = 128,
-    num_workers: int = 2,
+    num_workers: int = 4,
     root: str = "./data",
 ) -> Tuple[DataLoader, DataLoader]:
     """
-    Creates DataLoaders for the GTSRB dataset.
+    German Traffic Sign Recognition Benchmark (GTSRB) pipeline initialization.
+
+    Args:
+        batch_size (int): Size of the mini-batches for optimization.
+        num_workers (int): Number of parallel processes for data loading.
+        root (str): Root directory for dataset storage.
+
+    Returns:
+        Tuple[DataLoader, DataLoader]: Training and Testing DataLoaders.
     """
 
-    # --- Training Transformations ---
+    # --- Training Pipeline: Normalization and Domain-Specific Augmentation ---
+    # Resizing is mandatory as GTSRB original images have variable dimensions.
+    # RandomAffine and ColorJitter simulate environmental noise (perspective, lighting).
     train_transform = transforms.Compose(
         [
             transforms.Resize((32, 32)),
@@ -26,7 +36,8 @@ def get_gtsrb_loaders(
         ]
     )
 
-    # --- Test Transformations ---
+    # --- Testing Pipeline: Static Validation ---
+    # Identical resizing ensures compatibility with the model's input layer.
     test_transform = transforms.Compose(
         [
             transforms.Resize((32, 32)),
@@ -34,21 +45,27 @@ def get_gtsrb_loaders(
         ]
     )
 
-    # --- Dataset Loading ---
+    # --- Dataset Instantiation ---
+    # split="train" and split="test" are used to partition the data according to the challenge rules.
     train_set = torchvision.datasets.GTSRB(
         root=root, split="train", download=True, transform=train_transform
     )
+
     test_set = torchvision.datasets.GTSRB(
         root=root, split="test", download=True, transform=test_transform
     )
 
+    # --- DataLoader Instantiation ---
+    # drop_last=True is used in training to maintain constant batch sizes for gradient stability.
     train_loader = DataLoader(
         train_set,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
+        drop_last=True,
     )
+
     test_loader = DataLoader(
         test_set,
         batch_size=batch_size,

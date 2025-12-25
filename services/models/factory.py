@@ -4,29 +4,33 @@ from .simple_cnn import SimpleCNN
 from .resnet import ResNet18
 from .wideresnet import WideResNet
 
-# Standard values for CIFAR10
+# --- Dataset Statistics (RGB Space) ---
+# CIFAR-10: Standard statistics calculated over the training set.
 CIFAR10_MEAN = [0.4914, 0.4822, 0.4465]
 CIFAR10_STD = [0.2023, 0.1994, 0.2010]
 
-# Standard values for GTSRB
+# GTSRB: Specific statistics reflecting the varied lighting of German roads.
 GTSRB_MEAN = [0.3337, 0.3064, 0.3171]
 GTSRB_STD = [0.2672, 0.2564, 0.2629]
 
 
 class NormalizeLayer(nn.Module):
     """
-    Standardizes the input data (assumed to be in [0, 1])
-    using dataset-specific mean and std.
-    This is added as a layer so attacks can optimize on [0, 1] input space.
+    On-the-fly normalization layer.
+
+    This module transforms input tensors from the [0, 1] range to a
+    standardized distribution (Mean=0, Std=1). Integrated into the
+    model sequential flow, it allows adversarial attacks to optimize
+    directly in the valid image space [0, 1].
     """
 
     def __init__(self, mean, std):
         super(NormalizeLayer, self).__init__()
-        # make them buffers so they are saved with state_dict but not trained
+        # Buffers are stored in state_dict but excluded from gradient updates.
         self.register_buffer("mean", torch.tensor(mean).view(1, -1, 1, 1))
         self.register_buffer("std", torch.tensor(std).view(1, -1, 1, 1))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return (x - self.mean) / self.std
 
 
@@ -38,12 +42,22 @@ def get_model(
     **kwargs,
 ) -> nn.Module:
     """
-    Factory to get a model normalized for the specific dataset.
+    Unified Model Factory with integrated normalization.
+
+    Args:
+        model_name (str): Architecture identifier ('simple_cnn', 'resnet18', 'wideresnet').
+        dataset_name (str): Dataset identifier for normalization stats selection.
+        num_classes (int): Number of output neurons (classes).
+        in_channels (int): Input image channels (default=3 for RGB).
+        **kwargs: Additional hyperparameters for complex architectures (e.g., WideResNet).
+
+    Returns:
+        nn.Module: Sequential model (Normalization -> Base Architecture).
     """
     model_name = model_name.lower()
     dataset_name = dataset_name.lower()
 
-    # 1. Select the base architecture
+    # --- 1. Base Architecture Selection ---
     if model_name == "simple_cnn":
         base_model = SimpleCNN(
             num_classes=num_classes, in_channels=in_channels
@@ -51,6 +65,7 @@ def get_model(
     elif model_name in ["resnet", "resnet18"]:
         base_model = ResNet18(num_classes=num_classes, in_channels=in_channels)
     elif model_name == "wideresnet":
+        # Extract WideResNet specific parameters with default safety
         depth = kwargs.get("depth", 28)
         widen_factor = kwargs.get("widen_factor", 10)
         drop_rate = kwargs.get("drop_rate", 0.3)
@@ -62,18 +77,21 @@ def get_model(
             in_channels=in_channels,
         )
     else:
-        raise ValueError(f"Model {model_name} not supported.")
+        raise ValueError(
+            f"Model architecture '{model_name}' is not supported."
+        )
 
-    # 2. Select Normalization stats
+    # --- 2. Normalization Strategy Selection ---
     if dataset_name == "cifar10":
         mean, std = CIFAR10_MEAN, CIFAR10_STD
     elif dataset_name == "gtsrb":
         mean, std = GTSRB_MEAN, GTSRB_STD
     else:
-        # Default fallback (e.g., ImageNet or 0.5) if dataset is unknown
+        # Fallback to generic normalization (Identity-like)
         mean, std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
 
-    # 3. Wrap the model: Normalize -> Architecture
+    # --- 3. Unified Sequential Wrapper ---
+    # Constructing a single object for simplified inference and attack pipelines.
     final_model = nn.Sequential(NormalizeLayer(mean, std), base_model)
 
     return final_model

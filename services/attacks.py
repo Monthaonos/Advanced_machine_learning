@@ -194,17 +194,25 @@ def mim_attack(
 class UniversalPatchAttack:
     """
     Implementation of the Universal Adversarial Patch optimization.
-    Optimized for robustness across positions and images.
+
+    This class optimizes a localized patch (L0-norm attack) to be effective
+    across an entire dataset and at multiple spatial locations. It uses
+    Gradient Ascent to maximize the classification loss.
     """
 
     def __init__(self, model: nn.Module, patch_config: dict):
         """
-        Initializes the patch optimization environment.
+        Initializes the adversarial patch optimization environment.
+
+        Args:
+            model (nn.Module): The target neural network to attack.
+            patch_config (dict): Configuration containing 'scale', 'learning_rate',
+                                 and 'number_of_steps'.
         """
         self.model = model
         self.config = patch_config
 
-        # Consistent device management (handling CUDA, MPS, and CPU)
+        # Device management: ensures compatibility with CUDA, MPS (Apple Silicon), and CPU
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
@@ -212,11 +220,11 @@ class UniversalPatchAttack:
         else:
             self.device = torch.device("cpu")
 
-        # Patch size logic
-        self.image_size = 32  # CIFAR-10 / GTSRB default
+        # Dimensionality setup: patch size is proportional to image size (default 32x32)
+        self.image_size = 32
         self.patch_size = int(self.image_size * self.config["scale"])
 
-        # Initialize patch as a learnable parameter in [0, 1]
+        # Learnable parameter initialization: Random noise in the [0, 1] range
         self.patch = nn.Parameter(
             torch.rand(
                 (3, self.patch_size, self.patch_size), device=self.device
@@ -227,16 +235,24 @@ class UniversalPatchAttack:
         self, images: torch.Tensor, x: int = None, y: int = None
     ) -> torch.Tensor:
         """
-        Applies the patch to a batch of images.
-        If x or y are None, a random position is chosen for the batch.
+        Overlays the learnable patch onto a batch of images.
+
+        Args:
+            images (torch.Tensor): Input batch of shape (N, C, H, W).
+            x (int, optional): Top-left horizontal coordinate. Random if None.
+            y (int, optional): Top-left vertical coordinate. Random if None.
+
+        Returns:
+            torch.Tensor: The batch of images with the adversarial patch applied.
         """
         x_adv = images.clone().to(self.device)
 
-        # Limit coordinate range to keep the patch within image boundaries
+        # Coordinate range safety to keep the patch fully within image boundaries
         max_coord = self.image_size - self.patch_size
         x = x if x is not None else random.randint(0, max_coord)
         y = y if y is not None else random.randint(0, max_coord)
 
+        # Apply the patch to the target region for all images in the batch
         x_adv[
             :,
             :,
@@ -244,17 +260,25 @@ class UniversalPatchAttack:
             x : x + self.patch_size,
         ] = self.patch
 
+        # Numerical stability: Clamping to ensure pixels remain valid for the model
         return torch.clamp(x_adv, 0, 1)
 
     def train_patch(self, train_loader: torch.utils.data.DataLoader):
         """
-        Optimization loop for the universal patch using Gradient Ascent.
-        Objective: maximize the expectation of the loss over the data distribution.
+        Executes the optimization loop using Gradient Ascent.
+
+        Mathematical objective: argmax_P E_{(x,y)~D} [L(f(x + P), y)]
+        The model weights are frozen; only the patch parameters are updated.
+
+        Args:
+            train_loader (DataLoader): Training data distribution for optimization.
         """
+        # Set model to evaluation mode and freeze parameters
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
 
+        # Adam optimizer focused solely on the patch pixels
         optimizer = optim.Adam([self.patch], lr=self.config["learning_rate"])
         criterion = nn.CrossEntropyLoss()
 
@@ -265,7 +289,7 @@ class UniversalPatchAttack:
             f"[*] Optimizing {self.patch_size}x{self.patch_size} patch on {self.device}..."
         )
 
-        # Standard loop through the loader to avoid overhead
+        # Optimization loop across the data distribution
         while current_step < num_steps:
             for images, labels in train_loader:
                 if current_step >= num_steps:
@@ -274,19 +298,19 @@ class UniversalPatchAttack:
                 images, labels = images.to(self.device), labels.to(self.device)
                 optimizer.zero_grad()
 
-                # Apply patch at a random position during training for spatial invariance
+                # Spatial Invariance: Training with random positioning
                 patched_images = self.apply_patch(images)
 
+                # Forward pass through the frozen model
                 outputs = self.model(patched_images)
 
-                # Gradient Ascent: maximize loss to degrade performance
-                # Mathematical objective: \max_{P} \mathcal{L}(f(x + P), y)
+                # Gradient Ascent logic: Minimizing negative loss to maximize total error
                 loss = -criterion(outputs, labels)
 
                 loss.backward()
                 optimizer.step()
 
-                # Project back to valid pixel range [0, 1]
+                # Box constraint projection: Keep patch values within [0, 1]
                 self.patch.data.clamp_(0, 1)
 
                 if current_step % 20 == 0:
@@ -297,8 +321,16 @@ class UniversalPatchAttack:
                 current_step += 1
 
     def save(self, storage_path: str, filename: str):
-        """Saves the patch tensor."""
+        """
+        Serializes the optimized patch tensor to disk.
+
+        Args:
+            storage_path (str): Target directory.
+            filename (str): Name of the .pth file.
+        """
         os.makedirs(storage_path, exist_ok=True)
         save_path = os.path.join(storage_path, filename)
+
+        # Saving to CPU ensures compatibility during future loading on different hardware
         torch.save(self.patch.data.cpu(), save_path)
-        print(f"[+] Patch saved to {save_path}")
+        print(f"[+] Patch saved successfully at: {save_path}")
