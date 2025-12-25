@@ -9,6 +9,7 @@ from services.storage_manager import manage_checkpoint, save_results
 from services.dataloaders.factory import get_dataloaders
 from services.models.factory import get_model
 
+# --- Class Encoding Mapping ---
 GTSRB_LABELS = {
     0: "20km/h",
     1: "30km/h",
@@ -76,11 +77,12 @@ def run_patch_analysis(args, config):
         )
     )
 
-    # Path and Metadata resolution
-    storage_path = args.storage_path or config["project"]["storage_path"]
+    storage_path = args.storage_path  # Points to 'checkpoints'
+    results_path = args.results_path  # Points to 'results'
+
     dataset = args.dataset or config["data"]["dataset"]
     arch = args.model or config["model"]["architecture"]
-    prefix = config["model"].get("prefix", "test2")
+    prefix = args.prefix or config["model"].get("prefix", "test")
 
     # --- 1. Resource Setup ---
     train_loader, test_loader, num_classes, in_channels = get_dataloaders(
@@ -141,15 +143,11 @@ def run_patch_analysis(args, config):
         },
     ]
 
-    df = pd.DataFrame(patch_stats)
-
-    # Consistent output directory resolution (maps 'checkpoints' to 'results')
-    results_path = storage_path.replace("checkpoints", "results")
+    # CLEANUP: Removed .replace() logic to avoid 'results/_test0' folders
     os.makedirs(results_path, exist_ok=True)
 
     output_filename = f"{prefix}_{dataset}_{arch}_patch_report.csv"
-    save_results(df, results_path, output_filename)
-
+    save_results(pd.DataFrame(patch_stats), results_path, output_filename)
     print(f"✅ Patch report saved to: {results_path}/{output_filename}")
 
     # --- 4. Qualitative Visualization ---
@@ -161,6 +159,7 @@ def run_patch_analysis(args, config):
         test_loader,
         config,
         results_path,
+        prefix,
     )
 
 
@@ -176,19 +175,16 @@ def _calculate_asr(handler, model, loader, device):
     with torch.no_grad():
         for images, labels in tqdm(loader, desc="Evaluating ASR", leave=False):
             images, labels = images.to(device), labels.to(device)
-
             clean_preds = model(images).argmax(dim=1)
             correct_mask = clean_preds == labels
-
             num_correct = correct_mask.sum().item()
+
             if num_correct == 0:
                 continue
-
             total_initially_correct += num_correct
 
             patched_images = handler.apply_patch(images[correct_mask])
             patched_preds = model(patched_images).argmax(dim=1)
-
             successful_attacks += (
                 (patched_preds != labels[correct_mask]).sum().item()
             )
@@ -201,10 +197,16 @@ def _calculate_asr(handler, model, loader, device):
 
 
 def _plot_results(
-    handler, m_clean, m_robust, loader, config, results_path=None
+    handler,
+    m_clean,
+    m_robust,
+    loader,
+    config,
+    results_path=None,
+    prefix="test",
 ):
     """
-    Generates a 1x4 qualitative grid and saves it as a PNG file.
+    Generates a 1x4 qualitative grid with decoded class names and corrected spacing.
     """
     m_clean.eval()
     m_robust.eval()
@@ -220,21 +222,21 @@ def _plot_results(
         preds_c = m_clean(patched).argmax(dim=1)
         preds_r = m_robust(patched).argmax(dim=1)
 
-    # Augmentation de la taille de la figure pour éviter les collisions
+    # Increased figsize to ensure readable labels without overlap
     fig, axes = plt.subplots(1, 4, figsize=(24, 8))
 
     for i in range(4):
         img = np.transpose(patched[i].detach().cpu().numpy(), (1, 2, 0))
         axes[i].imshow(np.clip(img, 0, 1))
 
-        # Récupération des noms réels au lieu des indices
+        # Class decoding (GTSRB encoding)
         gt_name = GTSRB_LABELS.get(labels[i].item(), "N/A")
         std_name = GTSRB_LABELS.get(preds_c[i].item(), "N/A")
         rob_name = GTSRB_LABELS.get(preds_r[i].item(), "N/A")
 
         color = "green" if preds_r[i] == labels[i] else "red"
 
-        # Utilisation de 'pad' pour décoller le titre de l'image
+        # Corrected overlap using 'pad'
         axes[i].set_title(
             f"GT: {gt_name}\nStd: {std_name}\nRob: {rob_name}",
             color=color,
@@ -247,15 +249,11 @@ def _plot_results(
     plt.suptitle(
         f"Qualitative Analysis: Universal Patch Attack ({config['data']['dataset']})",
         fontsize=16,
-        y=0.95,  # Positionne le titre général plus haut
+        y=0.98,
     )
-
-    # Ajustement des marges pour laisser de la place au texte
-    plt.tight_layout(rect=[0, 0.03, 1, 0.9])
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     if results_path:
-        # Votre logique de sauvegarde existante
-        prefix = config["model"].get("prefix", "test")
         dataset = config["data"]["dataset"]
         arch = config["model"]["architecture"]
         fig_path = os.path.join(
