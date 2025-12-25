@@ -212,7 +212,7 @@ class UniversalPatchAttack:
         self.model = model
         self.config = patch_config
 
-        # Device management: ensures compatibility with CUDA, MPS (Apple Silicon), and CPU
+        # Device management: ensures compatibility with CUDA, MPS, and CPU
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
         elif torch.backends.mps.is_available():
@@ -231,44 +231,46 @@ class UniversalPatchAttack:
             )
         )
 
-    def apply_patch(
-        self, images: torch.Tensor, x: int = None, y: int = None
-    ) -> torch.Tensor:
+    def apply_patch(self, images: torch.Tensor) -> torch.Tensor:
         """
-        Overlays the learnable patch onto a batch of images.
+        Overlays the adversarial patch onto a batch of images, strictly
+        restricted to the central region where traffic signs are located.
+
+        This prevents the optimizer from getting 'lost' in the background,
+        ensuring every update contributes to the attack success.
 
         Args:
             images (torch.Tensor): Input batch of shape (N, C, H, W).
-            x (int, optional): Top-left horizontal coordinate. Random if None.
-            y (int, optional): Top-left vertical coordinate. Random if None.
 
         Returns:
-            torch.Tensor: The batch of images with the adversarial patch applied.
+            torch.Tensor: The batch of images with the localized adversarial patch.
         """
         x_adv = images.clone().to(self.device)
 
-        # Coordinate range safety to keep the patch fully within image boundaries
-        max_coord = self.image_size - self.patch_size
-        x = x if x is not None else random.randint(0, max_coord)
-        y = y if y is not None else random.randint(0, max_coord)
+        # Define the central boundaries (25% to 75% of the image size)
+        # For GTSRB, this targets the actual traffic sign location.
+        low = int(self.image_size * 0.25)
+        high = max(low, int(self.image_size * 0.75) - self.patch_size)
 
-        # Apply the patch to the target region for all images in the batch
-        x_adv[
-            :,
-            :,
-            y : y + self.patch_size,
-            x : x + self.patch_size,
-        ] = self.patch
+        # Spatial Invariance: Random positioning within the sign-containing region
+        x = random.randint(low, high)
+        y = random.randint(low, high)
 
-        # Numerical stability: Clamping to ensure pixels remain valid for the model
+        # Apply the learned patch parameters to the specified spatial region
+        x_adv[:, :, y : y + self.patch_size, x : x + self.patch_size] = (
+            self.patch
+        )
+
+        # Maintain numerical stability within the valid [0, 1] pixel range
         return torch.clamp(x_adv, 0, 1)
 
     def train_patch(self, train_loader: torch.utils.data.DataLoader):
         """
-        Executes the optimization loop using Gradient Ascent.
+        Executes the optimization loop using Gradient Ascent with Gradient Accumulation.
 
         Mathematical objective: argmax_P E_{(x,y)~D} [L(f(x + P), y)]
-        The model weights are frozen; only the patch parameters are updated.
+        This version averages gradients over multiple batches to stabilize the
+        universal property and prevent loss oscillations.
 
         Args:
             train_loader (DataLoader): Training data distribution for optimization.
@@ -282,43 +284,56 @@ class UniversalPatchAttack:
         optimizer = optim.Adam([self.patch], lr=self.config["learning_rate"])
         criterion = nn.CrossEntropyLoss()
 
+        # Stabilization: Gradient accumulation parameters
+        accumulation_steps = 4  # Average over 4 batches (128 samples)
         num_steps = self.config["number_of_steps"]
         current_step = 0
 
+        # Use a persistent iterator for consistent data flow across steps
+        iter_loader = iter(train_loader)
+
         print(
-            f"[*] Optimizing {self.patch_size}x{self.patch_size} patch on {self.device}..."
+            f"[*] Optimizing {self.patch_size}x{self.patch_size} patch (Stabilized & Centralized)..."
         )
 
         # Optimization loop across the data distribution
         while current_step < num_steps:
-            for images, labels in train_loader:
-                if current_step >= num_steps:
-                    break
+            optimizer.zero_grad()
+
+            step_loss_sum = 0
+            for _ in range(accumulation_steps):
+                try:
+                    images, labels = next(iter_loader)
+                except StopIteration:
+                    iter_loader = iter(train_loader)
+                    images, labels = next(iter_loader)
 
                 images, labels = images.to(self.device), labels.to(self.device)
-                optimizer.zero_grad()
 
-                # Spatial Invariance: Training with random positioning
+                # Training with random positioning inside the central zone
                 patched_images = self.apply_patch(images)
 
                 # Forward pass through the frozen model
                 outputs = self.model(patched_images)
 
-                # Gradient Ascent logic: Minimizing negative loss to maximize total error
-                loss = -criterion(outputs, labels)
-
+                # Gradient Ascent logic: Maximize classification loss
+                # Divided by accumulation_steps to maintain correct gradient scale
+                loss = -criterion(outputs, labels) / accumulation_steps
                 loss.backward()
-                optimizer.step()
 
-                # Box constraint projection: Keep patch values within [0, 1]
-                self.patch.data.clamp_(0, 1)
+                step_loss_sum += -loss.item() * accumulation_steps
 
-                if current_step % 20 == 0:
-                    print(
-                        f"    Step [{current_step}/{num_steps}] | Loss: {-loss.item():.4f}"
-                    )
+            optimizer.step()
 
-                current_step += 1
+            # Box constraint projection: Keep patch values within [0, 1]
+            self.patch.data.clamp_(0, 1)
+
+            if current_step % 20 == 0:
+                print(
+                    f"    Step [{current_step}/{num_steps}] | Average Loss: {step_loss_sum / accumulation_steps:.4f}"
+                )
+
+            current_step += 1
 
     def save(self, storage_path: str, filename: str):
         """
@@ -331,6 +346,6 @@ class UniversalPatchAttack:
         os.makedirs(storage_path, exist_ok=True)
         save_path = os.path.join(storage_path, filename)
 
-        # Saving to CPU ensures compatibility during future loading on different hardware
+        # Saving to CPU ensures compatibility during future loading
         torch.save(self.patch.data.cpu(), save_path)
         print(f"[+] Patch saved successfully at: {save_path}")
