@@ -4,3 +4,4 @@ pandas
 tqdm
 s3fs
 tomli
+jupiter
