@@ -9,6 +9,52 @@ from services.storage_manager import manage_checkpoint, save_results
 from services.dataloaders.factory import get_dataloaders
 from services.models.factory import get_model
 
+GTSRB_LABELS = {
+    0: "20km/h",
+    1: "30km/h",
+    2: "50km/h",
+    3: "60km/h",
+    4: "70km/h",
+    5: "80km/h",
+    6: "End 80km/h",
+    7: "100km/h",
+    8: "120km/h",
+    9: "No passing",
+    10: "No passing (>3.5t)",
+    11: "Priority at next junc",
+    12: "Priority road",
+    13: "Yield",
+    14: "Stop",
+    15: "No vehicles",
+    16: "Veh > 3.5t forbidden",
+    17: "No entry",
+    18: "General caution",
+    19: "Curve left",
+    20: "Curve right",
+    21: "Double curve",
+    22: "Bumpy road",
+    23: "Slippery road",
+    24: "Road narrows right",
+    25: "Road work",
+    26: "Traffic signals",
+    27: "Pedestrians",
+    28: "Children crossing",
+    29: "Bicycles crossing",
+    30: "Ice/snow",
+    31: "Wild animals",
+    32: "End speed + passing limits",
+    33: "Turn right",
+    34: "Turn left",
+    35: "Ahead only",
+    36: "Go straight or right",
+    37: "Go straight or left",
+    38: "Keep right",
+    39: "Keep left",
+    40: "Roundabout",
+    41: "End no passing",
+    42: "End no passing (>3.5t)",
+}
+
 
 def run_patch_analysis(args, config):
     """
@@ -174,33 +220,48 @@ def _plot_results(
         preds_c = m_clean(patched).argmax(dim=1)
         preds_r = m_robust(patched).argmax(dim=1)
 
-    fig, axes = plt.subplots(1, 4, figsize=(20, 6))
+    # Augmentation de la taille de la figure pour éviter les collisions
+    fig, axes = plt.subplots(1, 4, figsize=(24, 8))
+
     for i in range(4):
         img = np.transpose(patched[i].detach().cpu().numpy(), (1, 2, 0))
         axes[i].imshow(np.clip(img, 0, 1))
+
+        # Récupération des noms réels au lieu des indices
+        gt_name = GTSRB_LABELS.get(labels[i].item(), "N/A")
+        std_name = GTSRB_LABELS.get(preds_c[i].item(), "N/A")
+        rob_name = GTSRB_LABELS.get(preds_r[i].item(), "N/A")
+
         color = "green" if preds_r[i] == labels[i] else "red"
+
+        # Utilisation de 'pad' pour décoller le titre de l'image
         axes[i].set_title(
-            f"GT: {labels[i].item()}\nStd: {preds_c[i].item()}\nRob: {preds_r[i].item()}",
+            f"GT: {gt_name}\nStd: {std_name}\nRob: {rob_name}",
             color=color,
-            fontsize=12,
+            fontsize=10,
             fontweight="bold",
+            pad=20,
         )
         axes[i].axis("off")
 
     plt.suptitle(
         f"Qualitative Analysis: Universal Patch Attack ({config['data']['dataset']})",
         fontsize=16,
+        y=0.95,  # Positionne le titre général plus haut
     )
-    plt.tight_layout()
+
+    # Ajustement des marges pour laisser de la place au texte
+    plt.tight_layout(rect=[0, 0.03, 1, 0.9])
 
     if results_path:
+        # Votre logique de sauvegarde existante
         prefix = config["model"].get("prefix", "test")
         dataset = config["data"]["dataset"]
         arch = config["model"]["architecture"]
         fig_path = os.path.join(
             results_path, f"{prefix}_{dataset}_{arch}_patch_viz.png"
         )
-        plt.savefig(fig_path, dpi=300)
+        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
         print(f"🖼️ Visualization saved to: {fig_path}")
 
     plt.show()

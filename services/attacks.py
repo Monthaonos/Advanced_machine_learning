@@ -328,7 +328,7 @@ class UniversalPatchAttack:
             # Box constraint projection: Keep patch values within [0, 1]
             self.patch.data.clamp_(0, 1)
 
-            if current_step % 20 == 0:
+            if current_step % 50 == 0:
                 print(
                     f"    Step [{current_step}/{num_steps}] | Average Loss: {step_loss_sum / accumulation_steps:.4f}"
                 )
