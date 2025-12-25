@@ -23,11 +23,12 @@ def setup_directories(config: dict, prefix: str) -> tuple[str, str]:
     Returns:
         tuple[str, str]: Resolved paths for (storage_path, results_path).
     """
-    # Naming convention: base_path_<prefix> to isolate experiments
-    storage_path = f"{config['project']['storage_path']}_{prefix}"
-    results_path = f"results_{prefix}"
+    # We strip any trailing slashes to ensure consistent path joining later
+    storage_path = config["project"]["storage_path"].rstrip("/")
+    results_path = "results"
 
-    # Creation of directory tree
+    # Creation of the base directory tree
+    # Downstream services will handle the creation of _prefix subfolders
     os.makedirs(storage_path, exist_ok=True)
     os.makedirs(results_path, exist_ok=True)
 
