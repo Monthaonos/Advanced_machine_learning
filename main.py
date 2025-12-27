@@ -25,7 +25,10 @@ def setup_directories(config: dict, prefix: str) -> tuple[str, str]:
     """
     # We strip any trailing slashes to ensure consistent path joining later
     storage_path = config["project"]["storage_path"].rstrip("/")
-    results_path = "results"
+    if "checkpoints" in storage_path:
+        results_path = storage_path.replace("checkpoints", "results")
+    else:
+        results_path = "results"
 
     # Creation of the base directory tree
     # Downstream services will handle the creation of _prefix subfolders
