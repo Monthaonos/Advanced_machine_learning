@@ -68,6 +68,7 @@ The repository follows a strictly modular architecture to ensure a clear separat
 │   └── storage_manager.py      # Checkpoint and results persistence utility
 ├── checkpoints_<prefix>/       # Serialized model weights (.pth)
 └── results_<prefix>/           # Quantitative reports (.csv) and qualitative plots (.png)
+```
 
 ## 4. Configuration and Usage
 
