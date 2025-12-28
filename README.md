@@ -73,18 +73,36 @@ The repository follows a strictly modular architecture to ensure a clear separat
 
 The framework utilizes a centralized `TOML` configuration system to ensure experimental reproducibility and simplified version control. All research parameters are managed through a single entry point, allowing for seamless transitions between different datasets and architectures.
 
-### Unified Configuration (config.toml)
-Parameters are organized into functional blocks to maintain a clean separation of concerns:
+### Unified Configuration (`config.toml`)
+
+The framework utilizes a centralized TOML configuration to ensure reproducibility and a strict separation of concerns across the pipeline. Parameters are organized into functional blocks to maintain high modularity.
 
 | Section | Parameter | Description |
 | :--- | :--- | :--- |
-| **`[project]`** | `device`, `storage_path` | Computation backend (`cuda`, `mps`, `cpu`) and root checkpoint directory. |
-| **`[data]`** | `dataset`, `batch_size` | Selection between `cifar10` or `gtsrb` and sampling density per iteration. |
-| **`[model]`** | `architecture`, `prefix` | Choice of backbone (`resnet18`, etc.) and naming convention for experiment isolation. |
-| **`[training]`** | `epochs`, `learning_rate` | Optimization hyperparameters and control flow for model retraining. |
-| **`[adversarial]`** | `epsilon`, `train_prob` | Global $L_\infty$ perturbation budget and the probability $P_{train}$ for robust training. |
-| **`[patch_attack]`** | `scale`, `number_of_steps` | Spatial coverage ratio and optimization iterations for localized $L_0$ sticker attacks. |
-| **`[evaluation]`** | `attacks_to_run` | Enumeration of adversarial generators (e.g., `["Clean", "PGD", "MIM"]`) for benchmarking. |
+| **`[project]`** | `device` | Hardware acceleration backend: `cuda` (NVIDIA), `mps` (Apple Silicon), or `cpu`. |
+| | `storage_path` | The root directory for model weights. The system dynamically maps this to a parallel `results/` directory for metrics. |
+| **`[data]`** | `dataset` | Target distribution selection: `gtsrb` (German Traffic Sign Recognition) or `cifar10`. |
+| | `batch_size` | Number of samples processed per iteration during training and evaluation. |
+| **`[model]`** | `architecture` | Model backbone selection: `simple_cnn`, `resnet18`, or `wideresnet`. |
+| | `prefix` | Unique experiment identifier used as a filename header to prevent persistence collisions. |
+| **`[training]`** | `epochs` | Total number of optimization passes over the training dataset. |
+| | `learning_rate` | Initial step size for the optimizer (e.g., Adam or SGD). |
+| | `force_retrain` | Boolean flag to bypass existing checkpoints and restart the optimization process. |
+| **`[adversarial]`** | `epsilon` ($\epsilon$) | The maximum $L_\infty$ perturbation budget allowed for adversarial examples. |
+| | `alpha` ($\alpha$) | Step size for iterative adversarial generators (e.g., PGD). |
+| | `train_prob` ($P_{train}$) | Probability of including adversarial samples in a training batch to improve robust convergence. |
+| **`[patch_attack]`** | `scale` | Percentage of the image surface covered by the $L_0$ localized universal patch. |
+| | `number_of_steps` | Optimization budget for training the universal adversarial sticker. |
+| **`[evaluation]`** | `attacks_to_run` | Enumeration of adversarial generators (e.g., `["Clean", "FGSM", "PGD", "MIM"]`) for formal benchmarking. |
+
+---
+
+### Operational & Path Logic
+
+* **Path Synchronization:** The system automatically sanitizes `storage_path` using `.rstrip("/")` to ensure consistent path joining across local and cloud environments.
+* **Mirroring Strategy:** If the string `checkpoints` is detected in the storage path, the framework automatically resolves the results directory by replacing it with `results`, ensuring metrics and visualizations follow the models on persistent storage (e.g., Google Drive).
+* **Flat Namespace:** To maintain a clean directory structure, the `prefix` is applied strictly to filenames (e.g., `test0_gtsrb_resnet18_clean.pth`) rather than creating redundant subdirectories.
+
 
 ### Pipeline Execution
 The `main.py` orchestrator supports phased execution. You can run all phases sequentially or target specific research stages using flags:
