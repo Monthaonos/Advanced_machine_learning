@@ -47,6 +47,7 @@ The repository follows a strictly modular architecture to ensure a clear separat
 
 ```text
 ├── main.py                     # Unified entry point and research orchestrator
+├── main.ipynb                  # Quick and ready to run example
 ├── config.toml                 # Comprehensive research configuration (Phase 1, 2, 3)
 ├── requirements.txt            # Environment dependencies
 ├── services/                   # Core modular services
@@ -112,11 +113,11 @@ The `main.py` orchestrator supports phased execution. You can run all phases seq
 ```bash
 python main.py --config config.toml --train --prefix final_run
 ```
-**Phase 2: Formal Evaluation
+**Phase 2: Formal Evaluation**
 ```bash
 python main.py --config config.toml --eval --prefix final_run
 ```
-**Phase 3: Patch Vulnerability Analysis
+**Phase 3: Patch Vulnerability Analysis**
 ```bash
 python main.py --config config.toml --patch --prefix final_run
 ```
