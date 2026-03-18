@@ -1,3 +1,7 @@
+"""
+Phase 3: Universal adversarial patch (L0) analysis and visualization.
+"""
+
 import torch
 import os
 import matplotlib.pyplot as plt
@@ -9,7 +13,6 @@ from services.storage_manager import manage_checkpoint, save_results
 from services.dataloaders.factory import get_dataloaders
 from services.models.factory import get_model
 
-# --- Class Encoding Mapping ---
 GTSRB_LABELS = {
     0: "20km/h",
     1: "30km/h",
@@ -56,19 +59,37 @@ GTSRB_LABELS = {
     42: "End no passing (>3.5t)",
 }
 
+CIFAR10_LABELS = {
+    0: "Airplane",
+    1: "Automobile",
+    2: "Bird",
+    3: "Cat",
+    4: "Deer",
+    5: "Dog",
+    6: "Frog",
+    7: "Horse",
+    8: "Ship",
+    9: "Truck",
+}
+
+
+def _get_label_map(dataset: str) -> dict:
+    """Return the label mapping for a given dataset."""
+    if dataset == "gtsrb":
+        return GTSRB_LABELS
+    elif dataset == "cifar10":
+        return CIFAR10_LABELS
+    return {}
+
 
 def run_patch_analysis(args, config):
     """
-    Executes the comprehensive L-0 attack pipeline.
-
-    Workflow:
-    1. Resource Setup: Load DataLoaders and model architectures.
-    2. Checkpoint Management: Load existing weights for clean and robust variants.
-    3. Patch Optimization: Train a new universal patch or load an existing one.
-    4. Quantitative Evaluation & Persistence: Compute and save ASR metrics.
-    5. Qualitative Visualization: Plot and save sample adversarial grids.
+    Execute the L0 patch attack pipeline:
+    1. Load clean and robust model checkpoints.
+    2. Train or load a universal adversarial patch.
+    3. Compute Attack Success Rate (ASR) for both models.
+    4. Generate qualitative visualization grid.
     """
-    # Device resolution priority: CLI Argument > Config File > Auto-detect
     device = torch.device(
         args.device
         if args.device
@@ -77,57 +98,49 @@ def run_patch_analysis(args, config):
         )
     )
 
-    storage_path = args.storage_path  # Points to 'checkpoints'
-    results_path = args.results_path  # Points to 'results'
+    storage_path = args.storage_path
+    results_path = args.results_path
 
     dataset = args.dataset or config["data"]["dataset"]
     arch = args.model or config["model"]["architecture"]
     prefix = args.prefix or config["model"].get("prefix", "test")
 
-    # --- 1. Resource Setup ---
     train_loader, test_loader, num_classes, in_channels = get_dataloaders(
         dataset, batch_size=config["data"].get("batch_size", 32)
     )
 
     model_clean = get_model(arch, dataset, num_classes, in_channels).to(device)
-    model_robust = get_model(arch, dataset, num_classes, in_channels).to(
-        device
-    )
+    model_robust = get_model(arch, dataset, num_classes, in_channels).to(device)
 
     manage_checkpoint(
-        model_clean,
-        storage_path,
-        f"{prefix}_{dataset}_{arch}_clean.pth",
-        device,
+        model_clean, storage_path,
+        f"{prefix}_{dataset}_{arch}_clean.pth", device,
     )
     manage_checkpoint(
-        model_robust,
-        storage_path,
-        f"{prefix}_{dataset}_{arch}_robust.pth",
-        device,
+        model_robust, storage_path,
+        f"{prefix}_{dataset}_{arch}_robust.pth", device,
     )
 
-    # --- 2. Patch Optimization / Loading ---
+    # Patch optimization or loading
     patch_handler = UniversalPatchAttack(model_clean, config["patch_attack"])
     patch_file = f"{prefix}_{dataset}_{arch}_patch.pth"
     patch_path = os.path.join(storage_path, patch_file)
 
     if not os.path.exists(patch_path) or args.force_retrain:
-        print(f"[*] Training new Universal Patch for {arch}...")
+        print(f"[*] Training universal patch for {arch}...")
         patch_handler.train_patch(train_loader)
         torch.save(patch_handler.patch.data, patch_path)
     else:
         print(f"[*] Loading existing patch from {patch_path}")
-        patch_handler.patch.data = torch.load(patch_path).to(device)
+        patch_handler.patch.data = torch.load(
+            patch_path, weights_only=True
+        ).to(device)
 
-    # --- 3. Quantitative Evaluation & Persistence ---
-    print("\n📊 Starting Quantitative Patch Analysis...")
+    # Quantitative evaluation
+    print("\n[*] Computing Attack Success Rate...")
     asr_clean = _calculate_asr(patch_handler, model_clean, test_loader, device)
-    asr_robust = _calculate_asr(
-        patch_handler, model_robust, test_loader, device
-    )
+    asr_robust = _calculate_asr(patch_handler, model_robust, test_loader, device)
 
-    # Prepare statistics for standardized reporting
     patch_stats = [
         {
             "Model": f"{arch}_Clean",
@@ -143,30 +156,26 @@ def run_patch_analysis(args, config):
         },
     ]
 
-    # CLEANUP: Removed .replace() logic to avoid 'results/_test0' folders
     os.makedirs(results_path, exist_ok=True)
 
     output_filename = f"{prefix}_{dataset}_{arch}_patch_report.csv"
     save_results(pd.DataFrame(patch_stats), results_path, output_filename)
-    print(f"✅ Patch report saved to: {results_path}/{output_filename}")
+    print(f"[+] Patch report saved to: {results_path}/{output_filename}")
 
-    # --- 4. Qualitative Visualization ---
-    print("\n🎨 Generating qualitative grid visualization...")
+    # Qualitative visualization
+    print("\n[*] Generating visualization grid...")
     _plot_results(
-        patch_handler,
-        model_clean,
-        model_robust,
-        test_loader,
-        config,
-        results_path,
-        prefix,
+        patch_handler, model_clean, model_robust,
+        test_loader, config, results_path, prefix,
     )
 
 
 def _calculate_asr(handler, model, loader, device):
     """
-    Calculates the Attack Success Rate (ASR).
-    Formula: ASR = (Successful Attacks) / (Samples initially correctly classified).
+    Compute Attack Success Rate (ASR).
+
+    ASR = (correctly classified samples that are fooled by the patch)
+        / (total correctly classified samples)
     """
     model.eval()
     total_initially_correct = 0
@@ -197,19 +206,15 @@ def _calculate_asr(handler, model, loader, device):
 
 
 def _plot_results(
-    handler,
-    m_clean,
-    m_robust,
-    loader,
-    config,
-    results_path=None,
-    prefix="test",
+    handler, m_clean, m_robust, loader,
+    config, results_path=None, prefix="test",
 ):
-    """
-    Generates a 1x4 qualitative grid with decoded class names and corrected spacing.
-    """
+    """Generate a 1x4 qualitative grid showing patch attack predictions."""
     m_clean.eval()
     m_robust.eval()
+
+    dataset = config["data"]["dataset"]
+    label_map = _get_label_map(dataset)
 
     images, labels = next(iter(loader))
     images, labels = (
@@ -222,21 +227,18 @@ def _plot_results(
         preds_c = m_clean(patched).argmax(dim=1)
         preds_r = m_robust(patched).argmax(dim=1)
 
-    # Increased figsize to ensure readable labels without overlap
     fig, axes = plt.subplots(1, 4, figsize=(24, 8))
 
     for i in range(4):
         img = np.transpose(patched[i].detach().cpu().numpy(), (1, 2, 0))
         axes[i].imshow(np.clip(img, 0, 1))
 
-        # Class decoding (GTSRB encoding)
-        gt_name = GTSRB_LABELS.get(labels[i].item(), "N/A")
-        std_name = GTSRB_LABELS.get(preds_c[i].item(), "N/A")
-        rob_name = GTSRB_LABELS.get(preds_r[i].item(), "N/A")
+        gt_name = label_map.get(labels[i].item(), str(labels[i].item()))
+        std_name = label_map.get(preds_c[i].item(), str(preds_c[i].item()))
+        rob_name = label_map.get(preds_r[i].item(), str(preds_r[i].item()))
 
         color = "green" if preds_r[i] == labels[i] else "red"
 
-        # Corrected overlap using 'pad'
         axes[i].set_title(
             f"GT: {gt_name}\nStd: {std_name}\nRob: {rob_name}",
             color=color,
@@ -247,19 +249,18 @@ def _plot_results(
         axes[i].axis("off")
 
     plt.suptitle(
-        f"Qualitative Analysis: Universal Patch Attack ({config['data']['dataset']})",
+        f"Universal Patch Attack ({dataset.upper()})",
         fontsize=16,
         y=0.98,
     )
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     if results_path:
-        dataset = config["data"]["dataset"]
         arch = config["model"]["architecture"]
         fig_path = os.path.join(
             results_path, f"{prefix}_{dataset}_{arch}_patch_viz.png"
         )
         plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-        print(f"🖼️ Visualization saved to: {fig_path}")
+        print(f"[+] Visualization saved to: {fig_path}")
 
     plt.show()

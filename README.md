@@ -1,166 +1,180 @@
-# Adversarial Robustness on GTSRB: Extensions of the Madry Framework
+# Revisiting Madry's Defense: An Independent Study on Model Capacity and Adversarial Robustness
 
-## 1. Project Overview
+<p align="center">
+  <b>Maël Trémouille</b> &middot; Antoine Germain &middot; Damien Fleurie<br>
+  ENSAE Paris &middot; October 2025 – January 2026
+</p>
 
-This repository provides a rigorous implementation and extension of the robust optimization framework established by **Madry et al.** (*Towards Deep Learning Models Resistant to Adversarial Attacks*). 
+<p align="center">
+  <a href="Projet_AML.pdf"><b>Paper (PDF)</b></a> &middot;
+  <a href="https://colab.research.google.com/github/Monthaonos/Advanced_machine_learning/blob/main/main.ipynb">
+    <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab">
+  </a>
+</p>
 
-### Motivation and Objectives
-While Deep Neural Networks (DNNs) have achieved state-of-the-art performance in computer vision, their vulnerability to **adversarial perturbations**—carefully crafted, often imperceptible changes to inputs—remains a significant barrier to their deployment in safety-critical environments. The primary objective of this research is to evaluate and enhance the resilience of DNNs against such perturbations using a formalized "Min-Max" optimization approach.
+---
 
+This project is an independent, clean-room re-implementation of the [Madry et al. (ICLR 2018)](https://arxiv.org/abs/1706.06083) adversarial training framework. We investigate the relationship between **model capacity** and **adversarial robustness** across CIFAR-10 and the German Traffic Sign Recognition Benchmark (GTSRB), with extensions to momentum-based attacks (MIM), stochastic training regimes, and universal adversarial patches.
 
+<p align="center">
+  <img src="example_pgd.png" alt="PGD adversarial example on GTSRB" width="650"><br>
+  <em>A "General caution" traffic sign is misclassified as "Road narrows on the right" after an imperceptible PGD perturbation (ε = 8/255).</em>
+</p>
 
-### Extension to Real-World Scenarios
-While the original framework was primarily validated on standard datasets like MNIST and CIFAR-10, this repository extends the methodology to the **German Traffic Sign Recognition Benchmark (GTSRB)**. By shifting the focus to traffic sign recognition, we simulate the environmental challenges of **autonomous driving**, where robust classification is a prerequisite for safety under variable lighting, perspective shifts, and physical occlusions.
+## Key Results
 
-### Scientific Foundation
-The framework is built upon the saddle-point problem of robust optimization:
+### Model capacity is a primary driver of robustness
 
-$$\min_{\theta} \rho(\theta), \quad \text{where} \quad \rho(\theta) = \mathbb{E}_{(x,y) \sim \mathcal{D}} \left[ \max_{\delta \in \mathcal{S}} L(f_\theta(x+\delta), y) \right]$$
+Standard models (clean-trained) collapse to **~0% accuracy** under PGD on CIFAR-10 regardless of architecture. With adversarial training, higher-capacity models retain significant robustness:
 
-1.  **Inner Maximization (Attack)**: Identifies the "worst-case" perturbation $\delta$ within a constraint set $\mathcal{S}$ (e.g., $L_\infty$ or $L_0$ norms) that maximizes the classification loss.
-2.  **Outer Minimization (Defense)**: Updates the model parameters $\theta$ to minimize this maximum loss, thereby regularizing the decision boundaries for increased stability.
+| Architecture | Params | CIFAR-10 Clean Acc. | CIFAR-10 PGD Acc. | GTSRB Clean Acc. | GTSRB PGD Acc. |
+|:---|---:|---:|---:|---:|---:|
+| Simple CNN | ~4.3M | 63.4% | 39.3% | — | — |
+| ResNet-18 | ~11M | 85.2% | 48.2% | 95.2% | 69.0% |
+| **WideResNet-28-10** | **~36M** | **85.0%** | **47.8%** | **96.7%** | **69.0%** |
 
-## 2. Technical Features & Extensions
+> WideResNet achieves **~48% robust accuracy** on CIFAR-10 and **69% on GTSRB** under 20-step PGD (ε=8/255), validating Madry's hypothesis that capacity is necessary for robustness.
 
-This framework transcends basic robust training by integrating advanced adversarial modules designed for comprehensive security auditing and model hardening.
+### Stochastic training mitigates the accuracy-robustness trade-off
 
-### Advanced Adversarial Modules
-* **Multi-Dataset Support**: Specialized data pipelines for **CIFAR-10** and **GTSRB**. These include dataset-specific normalization layers and geometric augmentations (RandomAffine, ColorJitter) necessary for traffic sign invariance.
-* **Momentum Iterative Method (MiM)**: An implementation of momentum-based $L_\infty$ attacks. By integrating a momentum term into the PGD iterations, this module generates more stable adversarial examples that exhibit higher transferability across different architectures.
-* **Stochastic Robust Training ($P_{train}$)**: A probabilistic training logic controlled by the `train_prob` parameter. This allows for a controlled mixture of clean and adversarial samples within the same batch, providing a tunable mechanism to navigate the **Accuracy-Robustness Trade-off**.
-* **Universal Adversarial Patch ($L_0$ Attack)**: A specialized optimization-based attack (`patch_attack`) that generates localized, high-intensity perturbations. These "stickers" simulate real-world physical occlusions or vandalism on traffic signage, testing the model's resilience to non-global noise.
+Pure adversarial training (P_train=1.0) maximizes robustness but imposes an "accuracy tax" on clean data. We introduce a **batch-wise probabilistic training** strategy that mixes clean and adversarial samples:
 
+| Architecture | P_train | Clean Acc. | PGD Acc. | MIM Acc. |
+|:---|---:|---:|---:|---:|
+| Simple CNN | 1.0 | 63.4% | 39.3% | 39.9% |
+| Simple CNN | **0.8** | **69.3%** | **40.1%** | **41.0%** |
+| ResNet-18 | 1.0 | 85.2% | 48.2% | 46.5% |
+| ResNet-18 | 0.5 | 88.0% | 46.8% | 45.1% |
 
+> For the Simple CNN, P_train=0.8 **improves PGD robustness** (39.3% → 40.1%) **while gaining +6 points** of clean accuracy. Stochastic training acts as a regularizer that prevents "adversarial overfitting" in low-capacity models.
 
-### Robust Architectures
-The repository supports three distinct levels of model complexity to facilitate benchmark comparisons:
-1.  **SimpleCNN**: A modular VGG-style backbone for rapid pipeline verification.
-2.  **ResNet-18**: A standard residual network adapted for $32 \times 32$ inputs by removing the initial max-pooling and reducing the kernel size.
-3.  **WideResNet-28-10**: A high-capacity architecture utilizing pre-activation blocks and an increased width factor. This model is specifically recommended for adversarial training as its increased parameter density allows for the absorption of adversarial noise without collapsing standard accuracy.
+### Cross-norm robustness: L-infinity training transfers to L-0 patch attacks
 
+We evaluate universal adversarial patches (25% image coverage) against both clean and robust models:
 
-## 3. Detailed Project Structure
+| Architecture | CIFAR-10 Clean ASR | CIFAR-10 Robust ASR | GTSRB Clean ASR | GTSRB Robust ASR |
+|:---|---:|---:|---:|---:|
+| Simple CNN | 89.7% | **14.8%** | 93.6% | 55.6% |
+| ResNet-18 | 71.3% | **27.1%** | 64.8% | 51.4% |
+| WideResNet | 67.3% | **31.0%** | 71.9% | 53.1% |
 
-The repository follows a strictly modular architecture to ensure a clear separation between experimental configuration, data orchestration, and adversarial logic.
+> L-infinity adversarial training dramatically reduces patch vulnerability: ASR drops from **89.7% to 14.8%** for Simple CNN on CIFAR-10, revealing a significant **cross-norm transfer** of robustness. Models trained against global perturbations develop a structural "shape-bias" that partially resists localized attacks.
 
-### Directory Hierarchy
+## Contributions
 
-```text
-├── main.py                     # Unified entry point and research orchestrator
-├── main.ipynb                  # Quick and ready to run example
-├── config.toml                 # Comprehensive research configuration (Phase 1, 2, 3)
-├── requirements.txt            # Environment dependencies
-├── services/                   # Core modular services
-│   ├── dataloaders/            # Data pipeline orchestration
-│   │   ├── factory.py          # Unified loader factory (CIFAR-10 / GTSRB)
-│   │   ├── cifar10_loader.py   # Specialized CIFAR-10 augmentations
-│   │   └── gtsrb_loader.py     # Specialized GTSRB normalization and resizing
-│   ├── models/                 # Architecture definitions
-│   │   ├── factory.py          # Unified model factory with integrated NormalizeLayer
-│   │   ├── simple_cnn.py       # VGG-style baseline model
-│   │   ├── resnet.py           # ResNet-18 optimized for 32x32 inputs
-│   │   └── wideresnet.py       # High-capacity WideResNet-28-10
-│   ├── attacks.py              # Adversarial generators (FGSM, PGD, MIM)
-│   ├── training.py             # Phase 1: Robust training engine (Madry logic)
-│   ├── evaluation.py           # Phase 2: L-inf benchmarking orchestrator
-│   ├── evaluator.py            # Phase 2: Quantitative metric computation
-│   ├── patch_service.py        # Phase 3: L-0 universal patch analysis & viz
-│   ├── config_manager.py       # TOML parsing and CLI merging logic
-│   └── storage_manager.py      # Checkpoint and results persistence utility
-├── checkpoints_<prefix>/       # Serialized model weights (.pth)
-└── results_<prefix>/           # Quantitative reports (.csv) and qualitative plots (.png)
+1. **Capacity Analysis** — Empirically verify that model capacity is necessary for adversarial robustness by contrasting Simple CNN, ResNet-18, and WideResNet-28-10 across two datasets.
+2. **Stochastic Regularization** — Propose and evaluate a probabilistic training strategy (P_train) that provides a tunable accuracy-robustness trade-off, particularly effective for low-capacity models.
+3. **First-Order Universality** — Confirm that PGD robustness generalizes to other first-order attacks, specifically the Momentum Iterative Method (MIM).
+4. **Safety-Critical Extension & Cross-Norm Robustness** — Extend evaluation to GTSRB (autonomous driving) and show that L-infinity training provides significant, albeit incomplete, resilience against L-0 patch attacks.
+
+## Method
+
+The framework solves the min-max saddle point problem from [Madry et al.](https://arxiv.org/abs/1706.06083):
+
+$$\min_{\theta} \mathbb{E}_{(x,y) \sim \mathcal{D}} \left[ \max_{\delta \in \mathcal{S}} L(f_\theta(x+\delta), y) \right]$$
+
+- **Inner maximization**: Find worst-case perturbations via PGD (ε=8/255, α=2/255, K=6 steps during training)
+- **Outer minimization**: Update model weights to minimize adversarial loss
+- **Evaluation attacks**: Clean, FGSM (1-step), PGD-20, MIM (momentum-based)
+- **Patch attack**: Universal L-0 adversarial sticker optimized via gradient ascent with spatial invariance
+
+### Architectures
+
+| Model | Key Features | Recommended For |
+|:---|:---|:---|
+| **Simple CNN** | VGG-style, 4 conv layers, ~4.3M params | Baseline / fast experiments |
+| **ResNet-18** | Residual connections, adapted for 32x32 (no initial MaxPool) | GTSRB (geometric simplicity) |
+| **WideResNet-28-10** | Pre-activation blocks, width factor 10, ~36M params | Adversarial training (high capacity) |
+
+## Project Structure
+
+```
+├── main.py                    # Pipeline orchestrator (Phase 1/2/3)
+├── main.ipynb                 # Interactive demo notebook
+├── config.toml                # Production config (ResNet-18 on GTSRB)
+├── config_mini.toml           # Smoke test config (SimpleCNN on CIFAR-10)
+├── Projet_AML.pdf             # Full research paper
+├── services/
+│   ├── attacks.py             # FGSM, PGD, MIM, Universal Patch
+│   ├── training.py            # Phase 1: Clean & adversarial training
+│   ├── evaluation.py          # Phase 2: L-inf robustness benchmarking
+│   ├── patch_service.py       # Phase 3: L-0 patch analysis & visualization
+│   ├── core.py                # Madry training loop logic
+│   ├── evaluator.py           # Metric computation
+│   ├── storage_manager.py     # Checkpoint persistence
+│   ├── config_manager.py      # TOML config parsing
+│   ├── models/
+│   │   ├── factory.py         # Model factory with NormalizeLayer
+│   │   ├── simple_cnn.py      # VGG-style CNN
+│   │   ├── resnet.py          # ResNet-18 (32x32)
+│   │   └── wideresnet.py      # WideResNet-28-10
+│   └── dataloaders/
+│       ├── factory.py         # Dataset factory
+│       ├── cifar10_loader.py  # CIFAR-10 pipeline
+│       └── gtsrb_loader.py    # GTSRB pipeline
+├── checkpoints_*/             # Trained model weights (.pth)
+└── results_*/                 # CSV reports & visualizations
 ```
 
-## 4. Configuration and Usage
+## Usage
 
-The framework utilizes a centralized `TOML` configuration system to ensure experimental reproducibility and simplified version control. All research parameters are managed through a single entry point, allowing for seamless transitions between different datasets and architectures.
+### Installation
 
-### Unified Configuration (`config.toml`)
+```bash
+git clone https://github.com/Monthaonos/Advanced_machine_learning.git
+cd Advanced_machine_learning
+pip install -r requirements.txt
+```
 
-The framework utilizes a centralized TOML configuration to ensure reproducibility and a strict separation of concerns across the pipeline. Parameters are organized into functional blocks to maintain high modularity.
+### Training & Evaluation
+
+```bash
+# Phase 1: Train clean + robust models
+python main.py --config config.toml --train --prefix experiment_1
+
+# Phase 2: Evaluate under FGSM, PGD, MIM attacks
+python main.py --config config.toml --eval --prefix experiment_1
+
+# Phase 3: Universal patch analysis
+python main.py --config config.toml --patch --prefix experiment_1
+
+# Run all phases
+python main.py --config config.toml --train --eval --patch --prefix experiment_1
+```
+
+### CLI Overrides
+
+Any TOML parameter can be overridden from the command line:
+
+```bash
+# Quick smoke test on CIFAR-10
+python main.py --config config_mini.toml --dataset cifar10 --model simple_cnn --epochs 5 --train --eval
+
+# Stochastic training sweep
+python main.py --config config.toml --train_prob 0.8 --train --eval --prefix stochastic_08
+```
+
+### Configuration
+
+All parameters are managed via `config.toml`:
 
 | Section | Parameter | Description |
-| :--- | :--- | :--- |
-| **`[project]`** | `device` | Hardware acceleration backend: `cuda` (NVIDIA), `mps` (Apple Silicon), or `cpu`. |
-| | `storage_path` | The root directory for model weights. The system dynamically maps this to a parallel `results/` directory for metrics. |
-| **`[data]`** | `dataset` | Target distribution selection: `gtsrb` (German Traffic Sign Recognition) or `cifar10`. |
-| | `batch_size` | Number of samples processed per iteration during training and evaluation. |
-| **`[model]`** | `architecture` | Model backbone selection: `simple_cnn`, `resnet18`, or `wideresnet`. |
-| | `prefix` | Unique experiment identifier used as a filename header to prevent persistence collisions. |
-| **`[training]`** | `epochs` | Total number of optimization passes over the training dataset. |
-| | `learning_rate` | Initial step size for the optimizer (e.g., Adam or SGD). |
-| | `force_retrain` | Boolean flag to bypass existing checkpoints and restart the optimization process. |
-| **`[adversarial]`** | `epsilon` ($\epsilon$) | The maximum $L_\infty$ perturbation budget allowed for adversarial examples. |
-| | `alpha` ($\alpha$) | Step size for iterative adversarial generators (e.g., PGD). |
-| | `train_prob` ($P_{train}$) | Probability of including adversarial samples in a training batch to improve robust convergence. |
-| **`[patch_attack]`** | `scale` | Percentage of the image surface covered by the $L_0$ localized universal patch. |
-| | `number_of_steps` | Optimization budget for training the universal adversarial sticker. |
-| **`[evaluation]`** | `attacks_to_run` | Enumeration of adversarial generators (e.g., `["Clean", "FGSM", "PGD", "MIM"]`) for formal benchmarking. |
+|:---|:---|:---|
+| `[project]` | `device` | `cuda`, `mps` (Apple Silicon), or `cpu` |
+| `[data]` | `dataset` | `cifar10` or `gtsrb` |
+| `[model]` | `architecture` | `simple_cnn`, `resnet18`, or `wideresnet` |
+| `[training]` | `epochs` | Training epochs (30 for CNN, 100 for ResNets) |
+| `[adversarial]` | `epsilon` | L-inf perturbation budget (default: 8/255) |
+| `[adversarial]` | `train_prob` | Probability of adversarial batch (P_train) |
+| `[patch_attack]` | `scale` | Patch coverage as fraction of image area |
 
----
+## References
 
-### Operational & Path Logic
-
-* **Path Synchronization:** The system automatically sanitizes `storage_path` using `.rstrip("/")` to ensure consistent path joining across local and cloud environments.
-* **Mirroring Strategy:** If the string `checkpoints` is detected in the storage path, the framework automatically resolves the results directory by replacing it with `results`, ensuring metrics and visualizations follow the models on persistent storage (e.g., Google Drive).
-* **Flat Namespace:** To maintain a clean directory structure, the `prefix` is applied strictly to filenames (e.g., `test0_gtsrb_resnet18_clean.pth`) rather than creating redundant subdirectories.
-
-
-### Pipeline Execution
-The `main.py` orchestrator supports phased execution. You can run all phases sequentially or target specific research stages using flags:
-
-**Phase 1: Robust Training**
-```bash
-python main.py --config config.toml --train --prefix final_run
-```
-**Phase 2: Formal Evaluation**
-```bash
-python main.py --config config.toml --eval --prefix final_run
-```
-**Phase 3: Patch Vulnerability Analysis**
-```bash
-python main.py --config config.toml --patch --prefix final_run
-```
-
-### Dynamic Parameter Overrides
-
-The framework implements a strict configuration hierarchy to ensure maximum flexibility during experimentation: **CLI Arguments > TOML File > Internal Defaults**. 
-
-This allows for rapid hyperparameter sweeps or "smoke tests" without the need to manually modify the source `config.toml` file. Any parameter defined in the TOML can be overridden by passing the corresponding flag in the terminal.
-
-```bash
-# Example: Overriding epsilon, dataset, and model for a quick verification run
-python main.py --dataset cifar10 --epsilon 0.015 --model simple_cnn --train --eval
-```
-
-## 5. Mathematical Foundation
-
-The core of this framework is based on the **saddle-point problem** formulation, which provides a unified view of adversarial training as a robust optimization challenge.
-
-### The Min-Max Formulation
-The objective is to find model parameters $\theta$ that minimize the risk under the "worst-case" perturbations:
-
-$$\min_{\theta} \rho(\theta), \quad \text{where} \quad \rho(\theta) = \mathbb{E}_{(x,y) \sim \mathcal{D}} \left[ \max_{\delta \in \mathcal{S}} L(f_\theta(x+\delta), y) \right]$$
-
-This optimization is handled through two distinct nested loops:
-
-1.  **Inner Maximization (The Adversary)**: 
-    For a given set of parameters $\theta$, we seek the perturbation $\delta$ within a constraint set $\mathcal{S}$ that maximizes the classification loss $L$.
-    * **Global Attacks ($L_\infty$)**: Perturbations are constrained by a budget $\epsilon$, where $||\delta||_\infty \le \epsilon$. This is solved iteratively via **PGD** or **MIM**.
-    * **Local Attacks ($L_0$)**: Perturbations are restricted to a specific number of pixels (spatial coverage). This is handled by the **Universal Patch** optimization.
-
-2.  **Outer Minimization (The Defender)**: 
-    We update the parameters $\theta$ to minimize the loss generated by the adversary. By training on these "hard" examples, the model learns to rectify its decision boundaries, effectively increasing the margin of stability around each data point.
-
-
----
-
-## 6. References
-
-This research extension builds upon several foundational works in the field of Adversarial Machine Learning and Computer Vision:
-
-* **Madry, A., Makelov, A., Schmidt, L., Tsipras, D., & Vladu, A. (2018).** *Towards Deep Learning Models Resistant to Adversarial Attacks*. International Conference on Learning Representations (ICLR).
-* **Dong, Y., Liao, F., Pang, T., Su, H., Zhu, J., Hu, X., & Li, J. (2018).** *Boosting Adversarial Attacks with Momentum*. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR).
-* **Zagoruyko, S., & Komodakis, N. (2016).** *Wide Residual Networks*. British Machine Vision Conference (BMVC).
-* **Brown, T. B., Mane, D., Roy, A., Abadi, M., & Gilmer, J. (2017).** *Adversarial Patch*. arXiv preprint arXiv:1712.09665.
-* **Stallkamp, J., Schlipsing, M., Salmen, J., & Igel, C. (2012).** *Man vs. Computer: Benchmarking Machine Learning Algorithms for Traffic Sign Recognition*. Neural Networks.
+- Madry, A., Makelov, A., Schmidt, L., Tsipras, D., & Vladu, A. (2018). *Towards Deep Learning Models Resistant to Adversarial Attacks*. ICLR.
+- Dong, Y., Liao, F., Pang, T., Su, H., Zhu, J., Hu, X., & Li, J. (2018). *Boosting Adversarial Attacks with Momentum*. CVPR.
+- Brown, T. B., Mane, D., Roy, A., Abadi, M., & Gilmer, J. (2017). *Adversarial Patch*. arXiv:1712.09665.
+- Tsipras, D., Santurkar, S., Engstrom, L., Turner, A., & Madry, A. (2019). *Robustness May Be at Odds with Accuracy*. ICLR.
+- Zagoruyko, S. & Komodakis, N. (2016). *Wide Residual Networks*. BMVC.
+- He, K., Zhang, X., Ren, S., & Sun, J. (2016). *Deep Residual Learning for Image Recognition*. CVPR.
+- Goodfellow, I. J., Shlens, J., & Szegedy, C. (2014). *Explaining and Harnessing Adversarial Examples*. arXiv:1412.6572.
+- Stallkamp, J., Schlipsing, M., Salmen, J., & Igel, C. (2012). *Man vs. Computer: Benchmarking Machine Learning Algorithms for Traffic Sign Recognition*. Neural Networks.

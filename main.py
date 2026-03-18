@@ -1,5 +1,4 @@
 """
-Main Research Orchestrator.
 Central entry point for the adversarial robustness framework.
 Coordinates Training (Phase 1), Evaluation (Phase 2), and Patch Analysis (Phase 3).
 """
@@ -43,9 +42,8 @@ def main():
     Primary execution flow: parses CLI arguments, merges configuration,
     and executes requested pipeline phases.
     """
-    # --- 1. Argument Parsing Strategy ---
     parser = argparse.ArgumentParser(
-        description="Adversarial Robustness Framework - Unified Entry Point",
+        description="Adversarial Robustness Framework",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -133,7 +131,6 @@ def main():
         "--num-steps", type=int, help="Override number of attack iterations."
     )
 
-    # --- 2. Configuration & Workspace Resolution ---
     args = parser.parse_args()
 
     try:
@@ -142,36 +139,24 @@ def main():
         print(f"[-] Error: Configuration file '{args.config}' not found.")
         return
 
-    # Resolve prefix and workspace hierarchy (CLI takes priority over TOML)
     current_prefix = args.prefix or config["model"].get("prefix", "default")
     resolved_storage, resolved_results = setup_directories(
         config, current_prefix
     )
 
-    # Synchronize resolved paths back into args for downstream service consumption
     args.storage_path = resolved_storage
     args.results_path = resolved_results
 
-    # --- 3. Pipeline Execution (Sequential Orchestration) ---
-    # Phase 1: Model Optimization
     if args.train:
-        print(
-            f"\n🚀 [PIPELINE] Starting Phase 1: Training (Prefix: {current_prefix})"
-        )
+        print(f"\n[Phase 1] Training (prefix: {current_prefix})")
         run_training(args, config)
 
-    # Phase 2: Formal Robustness Benchmarking
     if args.eval:
-        print(
-            f"\n📊 [PIPELINE] Starting Phase 2: Evaluation (Prefix: {current_prefix})"
-        )
+        print(f"\n[Phase 2] Evaluation (prefix: {current_prefix})")
         run_evaluation(args, config)
 
-    # Phase 3: Vulnerability Analysis (Localized Attacks)
     if args.patch:
-        print(
-            f"\n🛡️ [PIPELINE] Starting Phase 3: Patch Analysis (Prefix: {current_prefix})"
-        )
+        print(f"\n[Phase 3] Patch Analysis (prefix: {current_prefix})")
         run_patch_analysis(args, config)
 
 

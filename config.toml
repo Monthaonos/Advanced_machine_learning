@@ -1,38 +1,38 @@
-# Unified Research Configuration
+# Production configuration for adversarial robustness experiments.
+# See README.md for parameter descriptions.
 
 [project]
-device = "cuda" # or "cpu"
-storage_path = "checkpoints/" # Path for .pth files
+device = "cuda"
+storage_path = "checkpoints/"
 
 [data]
-dataset = "gtsrb" # "cifar10" or "gtsrb"
+dataset = "gtsrb"                          # "cifar10" or "gtsrb"
 batch_size = 128
 num_workers = 4
 
 [model]
-architecture = "resnet18" # "simple_cnn", "resnet18", "wideresnet"
-prefix = "test0" # Used for naming checkpoints
+architecture = "resnet18"                  # "simple_cnn", "resnet18", "wideresnet"
+prefix = "gtsrb_resnet18"
 
 [training]
-epochs = 20
-learning_rate = 0.001
+epochs = 100
+learning_rate = 0.1
 momentum = 0.9
 weight_decay = 5e-4
 force_retrain = false
 
 [adversarial]
-epsilon = 0.03137 # 8/255
-alpha = 0.00784   # 2/255
-num_steps = 6
-train_prob = 1.0  # P_train parameter for stochastic training
+epsilon = 0.03137                          # 8/255
+alpha = 0.00784                            # 2/255
+num_steps = 6                              # PGD steps during training
+train_prob = 1.0                           # P_train: probability of adversarial batch
 random_start = true
 
 [patch_attack]
-scale = 0.25              # Patch coverage
+scale = 0.25                               # Patch covers 25% of image area
 learning_rate = 0.05
-number_of_steps = 1000   # Optimization iterations
-optimizer = "Adam"
+number_of_steps = 1000
 
 [evaluation]
 batch_size = 100
-attacks_to_run = ["Clean", "FGSM", "PGD", "MIM"] 
+attacks_to_run = ["Clean", "FGSM", "PGD", "MIM"]
