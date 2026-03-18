@@ -14,6 +14,8 @@
 
 ---
 
+> **Note:** This repository was part of a group project. The entire codebase, experiments, and research paper were developed by [Maël Trémouille](https://github.com/MaelTremouille). The maintained version lives at [MaelTremouille/toward-robust-models](https://github.com/MaelTremouille/toward-robust-models).
+
 This project is an independent, clean-room re-implementation of the [Madry et al. (ICLR 2018)](https://arxiv.org/abs/1706.06083) adversarial training framework. We investigate the relationship between **model capacity** and **adversarial robustness** across CIFAR-10 and the German Traffic Sign Recognition Benchmark (GTSRB), with extensions to momentum-based attacks (MIM), stochastic training regimes, and universal adversarial patches.
 
 <p align="center">
