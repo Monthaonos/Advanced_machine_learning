@@ -1,8 +1,8 @@
 # Revisiting Madry's Defense: An Independent Study on Model Capacity and Adversarial Robustness
 
 <p align="center">
-  <b>Maël Trémouille</b> &middot; Antoine Germain &middot; Damien Fleurie<br>
-  ENSAE Paris &middot; October 2025 – January 2026
+  <b>Maël Trémouille</b><br>
+  Institut Polytechnique de Paris &middot; October 2025 – January 2026
 </p>
 
 <p align="center">
